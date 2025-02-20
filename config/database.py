@@ -11,6 +11,7 @@ load_dotenv()
 client = None
 DATABASE_NAME = os.getenv('DATABASE_NAME', 'rsvp_db')
 
+# Na função conectar_db(), substitua os prints por logs
 async def conectar_db():
     """
     Estabelece conexão com o MongoDB
@@ -24,6 +25,7 @@ async def conectar_db():
         mongodb_url = os.getenv('MONGODB_URL')
         
         if not mongodb_url:
+            logger.error("MONGODB_URL não configurada")
             raise ValueError("MONGODB_URL não configurada")
         
         # Estabelece conexão com o MongoDB
@@ -32,13 +34,13 @@ async def conectar_db():
         # Verifica a conexão
         await client.admin.command('ping')
         
-        print(f"\U0001f504 Conectado ao banco de dados: {DATABASE_NAME}")
+        logger.info(f"Conectado ao banco de dados: {DATABASE_NAME}")
         return client
     except ConnectionFailure as e:
-        print(f"\u274c Erro de conexão com o banco de dados: {e}")
+        logger.error(f"Erro de conexão com o banco de dados: {e}")
         raise
     except Exception as e:
-        print(f"\u274c Erro ao conectar ao banco de dados: {e}")
+        logger.error(f"Erro ao conectar ao banco de dados: {e}")
         raise
 
 def get_database():

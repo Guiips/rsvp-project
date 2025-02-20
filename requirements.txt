@@ -1,8 +1,4 @@
-fastapi
-uvicorn
-motor
-pymongo
-python-dotenv
-pydantic[email]
-python-multipart
-openpyxl
+fastapi==0.108.0
+uvicorn==0.27.0
+motor==3.3.2
+python-dotenv==1.0.0

@@ -4,6 +4,9 @@ import os
 import logging
 from pymongo.errors import ConnectionFailure
 
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
 # Carrega variáveis de ambiente do arquivo .env
 load_dotenv()
 
@@ -13,16 +16,12 @@ DATABASE_NAME = os.getenv('DATABASE_NAME', 'rsvp_db')
 
 # Na função conectar_db(), substitua os prints por logs
 async def conectar_db():
-    """
-    Estabelece conexão com o MongoDB
-    
-    Returns:
-        AsyncIOMotorClient: Cliente de conexão com o MongoDB
-    """
     global client
     try:
         # URL do MongoDB a partir das variáveis de ambiente
         mongodb_url = os.getenv('MONGODB_URL')
+        
+        print(f"Tentando conectar com URL: {mongodb_url}")  # Log adicional
         
         if not mongodb_url:
             logger.error("MONGODB_URL não configurada")
@@ -42,7 +41,7 @@ async def conectar_db():
     except Exception as e:
         logger.error(f"Erro ao conectar ao banco de dados: {e}")
         raise
-
+    
 def get_database():
     """
     Obtém a instância do banco de dados

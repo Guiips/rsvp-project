@@ -1,113 +1,145 @@
 from typing import List
-from fastapi import APIRouter, File, UploadFile, HTTPException, Depends
+from fastapi import APIRouter, File, UploadFile, HTTPException, Depends, Request, Body
+from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.templating import Jinja2Templates
 from models.evento import Evento, Convidado, StatusConvidado, EventoUpdate
 from config.database import obter_db, get_database
+from services.email_service import email_service
 from bson import ObjectId
 from datetime import datetime
 import io
 from openpyxl import load_workbook
-from fastapi.responses import HTMLResponse
 
 # Cria o roteador de eventos
 eventos_router = APIRouter()
 
-@eventos_router.post("/eventos")
+# Templates config
+templates = Jinja2Templates(directory="templates")
+
+@eventos_router.post("/")
 async def criar_evento(evento: Evento):
+    """Cria um novo evento"""
     db = obter_db()
     try:
-        # Converte o dicionário para garantir que todos os campos estejam presentes
         evento_dict = evento.dict(exclude_unset=True)
-        
-        # Insere o evento
         result = await db.eventos.insert_one(evento_dict)
-        
-        # Converte o ID para string
         evento_dict['_id'] = str(result.inserted_id)
-        
         return evento_dict
-    
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-@eventos_router.get("/")  # Mudança aqui
+@eventos_router.get("/")
 async def listar_eventos():
+    """Lista todos os eventos"""
     db = obter_db()
     eventos = []
     async for evento in db.eventos.find():
-        evento['_id'] = str(evento['_id'])
+        if '_id' in evento:
+            evento['_id'] = str(evento['_id'])
+        if 'convidados' in evento:
+            for convidado in evento.get('convidados', []):
+                if '_id' in convidado:
+                    convidado['_id'] = str(convidado['_id'])
         eventos.append(evento)
     return eventos
 
-@eventos_router.get("/eventos/{evento_id}")
+@eventos_router.get("/{evento_id}")
 async def obter_evento(evento_id: str):
+    """Obtém detalhes de um evento específico"""
     db = obter_db()
     try:
-        # Converte o ID do evento para ObjectId
         object_id = ObjectId(evento_id)
-        
-        # Busca o evento no banco de dados
         evento = await db.eventos.find_one({"_id": object_id})
-        
         if not evento:
             raise HTTPException(status_code=404, detail="Evento não encontrado")
-        
-        # Converte ObjectId para string
         evento['_id'] = str(evento['_id'])
-        
-        # Garante que o campo convidados existe
-        if 'convidados' not in evento:
-            evento['convidados'] = []
-        
         return evento
-    
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-@eventos_router.post("/eventos/{evento_id}/convidados")
-async def adicionar_convidado(evento_id: str, convidado: Convidado):
+@eventos_router.delete("/{evento_id}")
+async def excluir_evento(evento_id: str):
+    """Exclui um evento"""
     db = obter_db()
     try:
-        # Converte o ID do evento para ObjectId
         object_id = ObjectId(evento_id)
-        
-        # Verifica se o evento existe
-        evento_existente = await db.eventos.find_one({"_id": object_id})
-        if not evento_existente:
+        resultado = await db.eventos.delete_one({"_id": object_id})
+        if resultado.deleted_count == 0:
             raise HTTPException(status_code=404, detail="Evento não encontrado")
-        
+        return {"mensagem": "Evento deletado com sucesso"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@eventos_router.post("/{evento_id}/convidados")
+async def adicionar_convidado(request: Request, evento_id: str, convidado: Convidado):
+    """Adiciona um novo convidado ao evento"""
+    db = obter_db()
+    try:
+        object_id = ObjectId(evento_id)
+        evento = await db.eventos.find_one({"_id": object_id})
+        if not evento:
+            raise HTTPException(status_code=404, detail="Evento não encontrado")
+
+        # Gera os links de confirmação
+        base_url = str(request.base_url).rstrip('/')
+        link_confirmacao = f"{base_url}/api/eventos/confirmar-presenca/{evento_id}/{convidado.email}/sim"
+        link_recusa = f"{base_url}/api/eventos/confirmar-presenca/{evento_id}/{convidado.email}/nao"
+
         # Adiciona o convidado
-        resultado = await db.eventos.update_one(
+        convidado_dict = convidado.dict()
+        await db.eventos.update_one(
             {"_id": object_id},
-            {"$push": {"convidados": convidado.dict()}}
+            {"$push": {"convidados": convidado_dict}}
         )
-        
-        # Busca o evento atualizado
+
+        # Envia o email de confirmação
+        try:
+            await email_service.enviar_email_confirmacao(
+                email=convidado.email,
+                nome=convidado.nome,
+                evento_nome=evento['nome'],
+                evento_data=evento['data'],
+                evento_hora=evento['hora'],
+                evento_local=evento['local'],
+                link_confirmacao=link_confirmacao,
+                link_recusa=link_recusa
+            )
+        except Exception as email_error:
+            print(f"Erro ao enviar email: {str(email_error)}")
+
+        # Retorna o evento atualizado
         evento_atualizado = await db.eventos.find_one({"_id": object_id})
         evento_atualizado['_id'] = str(evento_atualizado['_id'])
-        
         return evento_atualizado
-        
+
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 @eventos_router.get("/confirmar-presenca/{evento_id}/{convidado_email}/{resposta}")
-async def link_confirmacao(
-    evento_id: str, 
-    convidado_email: str, 
-    resposta: str,
-    db = Depends(get_database)
+async def confirmar_presenca(
+    request: Request,
+    evento_id: str,
+    convidado_email: str,
+    resposta: str
 ):
+    """Processa a confirmação de presença do convidado"""
     try:
         # Converte o ID do evento para ObjectId
         evento_oid = ObjectId(evento_id)
+        db = obter_db()
+
+        # Busca o evento
+        evento = await db.eventos.find_one({"_id": evento_oid})
+        if not evento:
+            raise HTTPException(status_code=404, detail="Evento não encontrado")
 
         # Converte a resposta para booleano
         confirmado = resposta.lower() == 'sim'
 
         # Atualiza o status do convidado
-        resultado = await db[db.get_database_name()]["eventos"].update_one(
+        resultado = await db.eventos.update_one(
             {
-                "_id": evento_oid, 
+                "_id": evento_oid,
                 "convidados.email": convidado_email
             },
             {
@@ -123,124 +155,137 @@ async def link_confirmacao(
         )
 
         if resultado.modified_count == 0:
-            raise HTTPException(status_code=404, detail="Convidado ou Evento não encontrado")
+            raise HTTPException(status_code=404, detail="Convidado não encontrado")
 
-        # Retorna uma página HTML de confirmação
-        return HTMLResponse(content=f"""
-        <html>
-        <head>
-            <style>
-                body {{ 
-                    font-family: Arial, sans-serif; 
-                    text-align: center; 
-                    padding: 50px; 
-                    background-color: #f0f0f0; 
-                }}
-                .container {{ 
-                    background-color: white; 
-                    padding: 30px; 
-                    border-radius: 10px; 
-                    box-shadow: 0 4px 6px rgba(0,0,0,0.1); 
-                    max-width: 500px; 
-                    margin: 0 auto; 
-                }}
-                h1 {{ color: #333; }}
-                p {{ color: #666; }}
-            </style>
-        </head>
-        <body>
-            <div class="container">
-                <h1>Confirmação de Presença</h1>
-                <p>Você {'confirmou' if confirmado else 'recusou'} a presença no evento.</p>
-                <p>Obrigado por sua resposta!</p>
-            </div>
-        </body>
-        </html>
-        """)
+        # Renderiza a página de confirmação
+        return templates.TemplateResponse(
+            "eventos/confirmar_presenca.html",
+            {
+                "request": request,
+                "confirmado": confirmado,
+                "evento": evento,
+                "email": convidado_email
+            }
+        )
+
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-@eventos_router.post("/eventos/{evento_id}/convidados/importar")
-async def importar_convidados(evento_id: str, file: UploadFile = File(...)):
+@eventos_router.post("/{evento_id}/convidados/importar")
+async def importar_convidados(request: Request, evento_id: str, file: UploadFile = File(...)):
+    """Importa lista de convidados de um arquivo Excel"""
     db = obter_db()
     try:
-        # Converte o ID do evento para ObjectId
         object_id = ObjectId(evento_id)
-        
-        # Busca o evento
         evento = await db.eventos.find_one({"_id": object_id})
         if not evento:
             raise HTTPException(status_code=404, detail="Evento não encontrado")
-        
-        # Lê o arquivo
+
         contents = await file.read()
         workbook = load_workbook(io.BytesIO(contents))
         worksheet = workbook.active
-        
+
+        base_url = str(request.base_url).rstrip('/')
         convidados = []
+        erros_email = []
+
         for row in worksheet.iter_rows(min_row=2, values_only=True):
-            # Permite 2 ou 3 colunas (nome, email, telefone)
+            if not row[0] or not row[1]:  # Pula linhas sem nome ou email
+                continue
+
             nome = row[0]
             email = row[1]
             telefone = row[2] if len(row) > 2 else None
-            
+
+            # Gera os links de confirmação
+            link_confirmacao = f"{base_url}/api/eventos/confirmar-presenca/{evento_id}/{email}/sim"
+            link_recusa = f"{base_url}/api/eventos/confirmar-presenca/{evento_id}/{email}/nao"
+
             convidado = {
-                'nome': nome, 
-                'email': email, 
+                'nome': nome,
+                'email': email,
                 'telefone': telefone,
                 'status': StatusConvidado.PENDENTE
             }
             convidados.append(convidado)
-        
-        return {"convidados": convidados}
-    
+
+            # Tenta enviar o email
+            try:
+                await email_service.enviar_email_confirmacao(
+                    email=email,
+                    nome=nome,
+                    evento_nome=evento['nome'],
+                    evento_data=evento['data'],
+                    evento_hora=evento['hora'],
+                    evento_local=evento['local'],
+                    link_confirmacao=link_confirmacao,
+                    link_recusa=link_recusa
+                )
+            except Exception as email_error:
+                erros_email.append(email)
+                print(f"Erro ao enviar email para {email}: {str(email_error)}")
+
+        # Atualiza o evento com todos os convidados
+        if convidados:
+            await db.eventos.update_one(
+                {"_id": object_id},
+                {"$push": {"convidados": {"$each": convidados}}}
+            )
+
+        return {
+            "convidados": convidados,
+            "total_importados": len(convidados),
+            "erros_email": erros_email
+        }
+
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-@eventos_router.post("/eventos/{evento_id}/convidados/confirmar-importacao")
-async def confirmar_importacao_convidados(evento_id: str, convidados: List[dict]):
-    db = obter_db()
+@eventos_router.post("/{evento_id}/convidados/enviar-email")
+async def enviar_email_convidado(
+    request: Request,
+    evento_id: str,
+    dados: dict = Body(...)
+):
+    """Envia email de confirmação para um convidado específico"""
     try:
-        # Converte o ID do evento para ObjectId
+        db = obter_db()
         object_id = ObjectId(evento_id)
-        
-        # Busca o evento
         evento = await db.eventos.find_one({"_id": object_id})
+        
         if not evento:
             raise HTTPException(status_code=404, detail="Evento não encontrado")
         
-        # Obtém a lista atual de convidados
-        lista_convidados = evento.get('convidados', [])
+        # Gera os links de confirmação
+        base_url = str(request.base_url).rstrip('/')
+        link_confirmacao = f"{base_url}/api/eventos/confirmar-presenca/{evento_id}/{dados['email']}/sim"
+        link_recusa = f"{base_url}/api/eventos/confirmar-presenca/{evento_id}/{dados['email']}/nao"
         
-        # Adiciona novos convidados
-        lista_convidados.extend(convidados)
-        
-        # Atualiza o documento no banco de dados
-        await db.eventos.update_one(
-            {"_id": object_id},
-            {"$set": {"convidados": lista_convidados}}
+        # Envia o email
+        await email_service.enviar_email_confirmacao(
+            email=dados['email'],
+            nome=dados['nome'],
+            evento_nome=evento['nome'],
+            evento_data=evento['data'],
+            evento_hora=evento['hora'],
+            evento_local=evento['local'],
+            link_confirmacao=link_confirmacao,
+            link_recusa=link_recusa
         )
         
-        # Busca o evento atualizado
-        evento_atualizado = await db.eventos.find_one({"_id": object_id})
-        evento_atualizado['_id'] = str(evento_atualizado['_id'])
+        return {"mensagem": "Email enviado com sucesso"}
         
-        return evento_atualizado
-    
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-@eventos_router.patch("/eventos/{evento_id}")
+@eventos_router.patch("/{evento_id}")
 async def atualizar_evento(evento_id: str, evento_update: EventoUpdate):
+    """Atualiza os dados de um evento"""
     db = obter_db()
     try:
-        # Converte o ID do evento para ObjectId
         object_id = ObjectId(evento_id)
-        
-        # Cria um dicionário com os campos a serem atualizados
         update_data = {k: v for k, v in evento_update.dict().items() if v is not None}
         
-        # Atualiza o evento
         resultado = await db.eventos.update_one(
             {"_id": object_id},
             {"$set": update_data}
@@ -249,29 +294,10 @@ async def atualizar_evento(evento_id: str, evento_update: EventoUpdate):
         if resultado.modified_count == 0:
             raise HTTPException(status_code=404, detail="Evento não encontrado")
         
-        # Busca o evento atualizado
         evento_atualizado = await db.eventos.find_one({"_id": object_id})
         evento_atualizado['_id'] = str(evento_atualizado['_id'])
         
         return evento_atualizado
-    
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-@eventos_router.delete("/eventos/{evento_id}")
-async def deletar_evento(evento_id: str):
-    db = obter_db()
-    try:
-        # Converte o ID do evento para ObjectId
-        object_id = ObjectId(evento_id)
-        
-        # Deleta o evento
-        resultado = await db.eventos.delete_one({"_id": object_id})
-        
-        if resultado.deleted_count == 0:
-            raise HTTPException(status_code=404, detail="Evento não encontrado")
-        
-        return {"mensagem": "Evento deletado com sucesso"}
     
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

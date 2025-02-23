@@ -1,0 +1,86 @@
+<!-- templates/eventos/criar.html -->
+{% extends "base.html" %}
+
+{% block title %}Novo Evento{% endblock %}
+
+{% block content %}
+<div class="card">
+    <div class="card-header">
+        <h2>Criar Novo Evento</h2>
+    </div>
+    <div class="card-body">
+        <form id="eventoForm" method="POST">
+            <div class="mb-3">
+                <label for="nome" class="form-label">Nome do Evento</label>
+                <input type="text" class="form-control" id="nome" name="nome" required>
+            </div>
+            <div class="mb-3">
+                <label for="responsavel" class="form-label">Responsável</label>
+                <input type="text" class="form-control" id="responsavel" name="responsavel" required>
+            </div>
+            <div class="row">
+                <div class="col-md-6 mb-3">
+                    <label for="data" class="form-label">Data</label>
+                    <input type="date" class="form-control" id="data" name="data" required>
+                </div>
+                <div class="col-md-6 mb-3">
+                    <label for="hora" class="form-label">Hora</label>
+                    <input type="time" class="form-control" id="hora" name="hora" required>
+                </div>
+            </div>
+            <div class="mb-3">
+                <label for="local" class="form-label">Local</label>
+                <input type="text" class="form-control" id="local" name="local" required>
+            </div>
+            <div class="mb-3">
+                <label for="descricao" class="form-label">Descrição</label>
+                <textarea class="form-control" id="descricao" name="descricao" rows="3"></textarea>
+            </div>
+            <div class="mb-3">
+                <label for="categoria" class="form-label">Categoria</label>
+                <select class="form-select" id="categoria" name="categoria">
+                    <option value="aniversario">Aniversário</option>
+                    <option value="casamento">Casamento</option>
+                    <option value="corporativo">Corporativo</option>
+                    <option value="outros">Outros</option>
+                </select>
+            </div>
+            <button type="submit" class="btn btn-primary">Criar Evento</button>
+        </form>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+$(document).ready(function() {
+    $('#eventoForm').on('submit', function(e) {
+        e.preventDefault();
+        
+        const formData = {
+            nome: $('#nome').val(),
+            responsavel: $('#responsavel').val(),
+            data: $('#data').val(),
+            hora: $('#hora').val(),
+            local: $('#local').val(),
+            descricao: $('#descricao').val(),
+            categoria: $('#categoria').val()
+        };
+
+        $.ajax({
+            url: '/api/eventos',
+            method: 'POST',
+            contentType: 'application/json',
+            data: JSON.stringify(formData),
+            success: function(response) {
+                alert('Evento criado com sucesso!');
+                window.location.href = '/eventos/' + response._id;
+            },
+            error: function(xhr, status, error) {
+                alert('Erro ao criar evento: ' + error);
+            }
+        });
+    });
+});
+</script>
+{% endblock %}

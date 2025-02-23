@@ -1,0 +1,331 @@
+<!-- templates/eventos/detalhes.html -->
+{% extends "base.html" %}
+
+{% block title %}Detalhes do Evento{% endblock %}
+
+{% block content %}
+<div class="card">
+    <div class="card-header">
+        <h2 id="nomeEvento"></h2>
+    </div>
+    <div class="card-body">
+        <div class="row mb-4">
+            <div class="col-md-6">
+                <p><strong>Responsável:</strong> <span id="responsavel"></span></p>
+                <p><strong>Data:</strong> <span id="data"></span></p>
+                <p><strong>Hora:</strong> <span id="hora"></span></p>
+                <p><strong>Local:</strong> <span id="local"></span></p>
+                <p><strong>Categoria:</strong> <span id="categoria"></span></p>
+            </div>
+            <div class="col-md-6">
+                <p><strong>Descrição:</strong></p>
+                <p id="descricao"></p>
+            </div>
+        </div>
+
+        <h3>Convidados</h3>
+        <div class="mb-3">
+            <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#addConvidadoModal">
+                <i class="bi bi-person-plus"></i> Adicionar Convidado
+            </button>
+            <button class="btn btn-secondary" data-bs-toggle="modal" data-bs-target="#importarConvidadosModal">
+                <i class="bi bi-file-earmark-excel"></i> Importar Lista
+            </button>
+            <button class="btn btn-success" id="enviarEmails">
+                <i class="bi bi-envelope"></i> Enviar E-mails
+            </button>
+        </div>
+
+        <div class="table-responsive">
+            <table class="table table-striped">
+                <thead>
+                    <tr>
+                        <th>Nome</th>
+                        <th>Email</th>
+                        <th>Telefone</th>
+                        <th>Status</th>
+                        <th>Ações</th>
+                    </tr>
+                </thead>
+                <tbody id="listaConvidados"></tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<!-- Modal Adicionar Convidado -->
+<div class="modal fade" id="addConvidadoModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Adicionar Convidado</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <form id="convidadoForm">
+                    <div class="mb-3">
+                        <label for="nomeConvidado" class="form-label">Nome</label>
+                        <input type="text" class="form-control" id="nomeConvidado" required>
+                    </div>
+                    <div class="mb-3">
+                        <label for="emailConvidado" class="form-label">Email</label>
+                        <input type="email" class="form-control" id="emailConvidado" required>
+                    </div>
+                    <div class="mb-3">
+                        <label for="telefoneConvidado" class="form-label">Telefone</label>
+                        <input type="tel" class="form-control" id="telefoneConvidado">
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+                <button type="button" class="btn btn-primary" id="salvarConvidado">Adicionar</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Modal Importar Convidados -->
+<div class="modal fade" id="importarConvidadosModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Importar Lista de Convidados</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <form id="importarForm">
+                    <div class="mb-3">
+                        <label for="arquivoExcel" class="form-label">Arquivo Excel</label>
+                        <input type="file" class="form-control" id="arquivoExcel" accept=".xlsx,.xls" required>
+                    </div>
+                    <p class="text-muted">
+                        O arquivo deve ter as colunas: Nome, Email, Telefone (opcional)
+                    </p>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+                <button type="button" class="btn btn-primary" id="importarConvidados">Importar</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Modal Status Envio -->
+<div class="modal fade" id="statusEnvioModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Status do Envio</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="progress mb-3" style="height: 20px;">
+                    <div class="progress-bar progress-bar-striped progress-bar-animated" 
+                         role="progressbar" 
+                         id="progressoEnvio"
+                         style="width: 0%">
+                        0%
+                    </div>
+                </div>
+                <div id="statusEnvioTexto" class="alert alert-info">
+                    Preparando para enviar...
+                </div>
+                <div id="resultadoEnvio" class="mt-3">
+                    <div class="text-success" id="enviosSuccess"></div>
+                    <div class="text-danger" id="enviosError"></div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Fechar</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% endblock %}
+
+{% block extra_js %}
+<script>
+$(document).ready(function() {
+    const eventoId = window.location.pathname.split('/').pop();
+
+    function carregarEvento() {
+        $.ajax({
+            url: '/api/eventos/' + eventoId,
+            method: 'GET',
+            success: function(evento) {
+                $('#nomeEvento').text(evento.nome);
+                $('#responsavel').text(evento.responsavel);
+                $('#data').text(evento.data);
+                $('#hora').text(evento.hora);
+                $('#local').text(evento.local);
+                $('#categoria').text(evento.categoria);
+                $('#descricao').text(evento.descricao || 'Sem descrição');
+                
+                atualizarListaConvidados(evento.convidados || []);
+            },
+            error: function(xhr, status, error) {
+                alert('Erro ao carregar evento: ' + error);
+            }
+        });
+    }
+
+    function atualizarListaConvidados(convidados) {
+        const tbody = $('#listaConvidados');
+        tbody.empty();
+
+        convidados.forEach(function(convidado) {
+            const tr = $('<tr>');
+            tr.append($('<td>').text(convidado.nome));
+            tr.append($('<td>').text(convidado.email));
+            tr.append($('<td>').text(convidado.telefone || '-'));
+            tr.append($('<td>').text(convidado.status || 'pendente'));
+            
+            // Coluna de ações
+            const tdAcoes = $('<td>');
+            const btnReenviar = $('<button>')
+                .addClass('btn btn-sm btn-outline-primary me-1')
+                .html('<i class="bi bi-envelope"></i>')
+                .attr('title', 'Reenviar Email')
+                .click(function() {
+                    enviarEmailIndividual(convidado);
+                });
+            tdAcoes.append(btnReenviar);
+            tr.append(tdAcoes);
+            
+            tbody.append(tr);
+        });
+    }
+
+    async function enviarEmailIndividual(convidado) {
+        try {
+            await $.ajax({
+                url: `/api/eventos/${eventoId}/convidados/enviar-email`,
+                method: 'POST',
+                contentType: 'application/json',
+                data: JSON.stringify({
+                    email: convidado.email,
+                    nome: convidado.nome
+                })
+            });
+            alert('Email enviado com sucesso!');
+        } catch (error) {
+            alert('Erro ao enviar email: ' + error);
+        }
+    }
+
+    // Carregar evento ao iniciar
+    carregarEvento();
+
+    // Adicionar convidado
+    $('#salvarConvidado').click(function() {
+        const convidado = {
+            nome: $('#nomeConvidado').val(),
+            email: $('#emailConvidado').val(),
+            telefone: $('#telefoneConvidado').val()
+        };
+
+        $.ajax({
+            url: '/api/eventos/' + eventoId + '/convidados',
+            method: 'POST',
+            contentType: 'application/json',
+            data: JSON.stringify(convidado),
+            success: function(response) {
+                alert('Convidado adicionado com sucesso!');
+                $('#addConvidadoModal').modal('hide');
+                carregarEvento();
+                
+                // Limpar formulário
+                $('#convidadoForm')[0].reset();
+            },
+            error: function(xhr, status, error) {
+                alert('Erro ao adicionar convidado: ' + error);
+            }
+        });
+    });
+
+    // Importar convidados
+    $('#importarConvidados').click(function() {
+        const formData = new FormData();
+        const fileInput = $('#arquivoExcel')[0];
+        formData.append('file', fileInput.files[0]);
+
+        $.ajax({
+            url: '/api/eventos/' + eventoId + '/convidados/importar',
+            method: 'POST',
+            data: formData,
+            processData: false,
+            contentType: false,
+            success: function(response) {
+                alert('Lista importada com sucesso!');
+                $('#importarConvidadosModal').modal('hide');
+                carregarEvento();
+                
+                // Limpar formulário
+                $('#importarForm')[0].reset();
+            },
+            error: function(xhr, status, error) {
+                alert('Erro ao importar lista: ' + error);
+            }
+        });
+    });
+
+    // Enviar emails em massa
+    $('#enviarEmails').click(async function() {
+        const modal = new bootstrap.Modal(document.getElementById('statusEnvioModal'));
+        modal.show();
+        
+        const convidados = $('#listaConvidados tr').map(function() {
+            return {
+                nome: $(this).find('td:eq(0)').text(),
+                email: $(this).find('td:eq(1)').text(),
+                status: $(this).find('td:eq(3)').text()
+            };
+        }).get();
+
+        const totalConvidados = convidados.length;
+        let sucessos = 0;
+        let erros = 0;
+        
+        for (let i = 0; i < convidados.length; i++) {
+            const convidado = convidados[i];
+            
+            // Atualiza a barra de progresso
+            const progresso = Math.round(((i + 1) / totalConvidados) * 100);
+            $('#progressoEnvio').css('width', progresso + '%').text(progresso + '%');
+            $('#statusEnvioTexto').text(`Enviando email para ${convidado.email}...`);
+
+            try {
+                if (convidado.status.toLowerCase() !== 'confirmado' && 
+                    convidado.status.toLowerCase() !== 'recusado') {
+                    await $.ajax({
+                        url: `/api/eventos/${eventoId}/convidados/enviar-email`,
+                        method: 'POST',
+                        contentType: 'application/json',
+                        data: JSON.stringify({
+                            email: convidado.email,
+                            nome: convidado.nome
+                        })
+                    });
+                    sucessos++;
+                }
+            } catch (error) {
+                erros++;
+                console.error(`Erro ao enviar email para ${convidado.email}:`, error);
+            }
+
+            // Atualiza contadores
+            $('#enviosSuccess').text(`Emails enviados com sucesso: ${sucessos}`);
+            if (erros > 0) {
+                $('#enviosError').text(`Falhas no envio: ${erros}`);
+            }
+        }
+
+        $('#statusEnvioTexto').text('Envio concluído!');
+        $('#statusEnvioTexto').removeClass('alert-info').addClass('alert-success');
+    });
+});
+</script>
+{% endblock %}

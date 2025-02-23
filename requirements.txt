@@ -1,0 +1,13 @@
+fastapi
+uvicorn
+python-dotenv
+motor
+pymongo
+pydantic
+python-multipart
+jinja2
+aiofiles
+python-jose[cryptography]
+passlib[bcrypt]
+fastapi-mail
+openpyxl

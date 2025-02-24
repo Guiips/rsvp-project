@@ -338,7 +338,6 @@ async def confirmar_convite(token: str, request: Request):
         evento = await db.eventos.find_one({"_id": ObjectId(evento_id)})
         
         if not evento:
-            # Mensagem de erro simples
             return templates.TemplateResponse("confirmacao_erro.html", {
                 "request": request, 
                 "mensagem": "Evento não encontrado."
@@ -359,10 +358,10 @@ async def confirmar_convite(token: str, request: Request):
                 {"$set": {"convidados": convidados}}
             )
             
-            return templates.TemplateResponse("confirmacao_sucesso_simples.html", {
+            return templates.TemplateResponse("confirmacao_sucesso.html", {
                 "request": request, 
                 "evento": evento,
-                "status": "confirmado"
+                "status": "confirmado"  # Verifique se isso está correto
             })
         else:
             return templates.TemplateResponse("confirmacao_erro.html", {

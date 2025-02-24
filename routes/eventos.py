@@ -241,6 +241,124 @@ async def importar_convidados(request: Request, evento_id: str, file: UploadFile
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+
+@router.get("/confirmar/{token}")
+async def confirmar_convite(token: str, request: Request):
+    try:
+        # Decodificar o token para encontrar o evento e o convidado
+        decoded_token = jwt.decode(token, SECRET_KEY, algorithms=["HS256"])
+        
+        evento_id = decoded_token.get('evento_id')
+        email_convidado = decoded_token.get('email')
+        
+        # Buscar o evento
+        evento = await db.eventos.find_one({"_id": ObjectId(evento_id)})
+        
+        if not evento:
+            return templates.TemplateResponse("confirmacao_erro.html", {
+                "request": request, 
+                "mensagem": "Evento não encontrado."
+            })
+        
+        # Encontrar o convidado no evento
+        convidados = evento.get('convidados', [])
+        convidado_atualizado = False
+        
+        for convidado in convidados:
+            if convidado.get('email') == email_convidado:
+                # Atualizar o status do convidado
+                convidado['status'] = 'confirmado'
+                convidado_atualizado = True
+                break
+        
+        if convidado_atualizado:
+            # Atualizar o evento no banco de dados
+            await db.eventos.update_one(
+                {"_id": ObjectId(evento_id)},
+                {"$set": {"convidados": convidados}}
+            )
+            
+            return templates.TemplateResponse("confirmacao_sucesso.html", {
+                "request": request, 
+                "evento": evento,
+                "status": "confirmado"
+            })
+        else:
+            return templates.TemplateResponse("confirmacao_erro.html", {
+                "request": request, 
+                "mensagem": "Convidado não encontrado."
+            })
+    
+    except jwt.ExpiredSignatureError:
+        return templates.TemplateResponse("confirmacao_erro.html", {
+            "request": request, 
+            "mensagem": "Link de confirmação expirado."
+        })
+    except Exception as e:
+        return templates.TemplateResponse("confirmacao_erro.html", {
+            "request": request, 
+            "mensagem": "Erro ao processar confirmação."
+        })
+
+@router.get("/recusar/{token}")
+async def recusar_convite(token: str, request: Request):
+    try:
+        # Similar à rota de confirmação, mas define o status como 'recusado'
+        decoded_token = jwt.decode(token, SECRET_KEY, algorithms=["HS256"])
+        
+        evento_id = decoded_token.get('evento_id')
+        email_convidado = decoded_token.get('email')
+        
+        # Buscar o evento
+        evento = await db.eventos.find_one({"_id": ObjectId(evento_id)})
+        
+        if not evento:
+            return templates.TemplateResponse("confirmacao_erro.html", {
+                "request": request, 
+                "mensagem": "Evento não encontrado."
+            })
+        
+        # Encontrar o convidado no evento
+        convidados = evento.get('convidados', [])
+        convidado_atualizado = False
+        
+        for convidado in convidados:
+            if convidado.get('email') == email_convidado:
+                # Atualizar o status do convidado
+                convidado['status'] = 'recusado'
+                convidado_atualizado = True
+                break
+        
+        if convidado_atualizado:
+            # Atualizar o evento no banco de dados
+            await db.eventos.update_one(
+                {"_id": ObjectId(evento_id)},
+                {"$set": {"convidados": convidados}}
+            )
+            
+            return templates.TemplateResponse("confirmacao_sucesso.html", {
+                "request": request, 
+                "evento": evento,
+                "status": "recusado"
+            })
+        else:
+            return templates.TemplateResponse("confirmacao_erro.html", {
+                "request": request, 
+                "mensagem": "Convidado não encontrado."
+            })
+    
+    except jwt.ExpiredSignatureError:
+        return templates.TemplateResponse("confirmacao_erro.html", {
+            "request": request, 
+            "mensagem": "Link de confirmação expirado."
+        })
+    except Exception as e:
+        return templates.TemplateResponse("confirmacao_erro.html", {
+            "request": request, 
+            "mensagem": "Erro ao processar confirmação."
+        })
+
+
 @eventos_router.post("/{evento_id}/convidados/enviar-email")
 async def enviar_email_convidado(
     request: Request,

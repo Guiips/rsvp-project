@@ -1,98 +1,154 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Login</title>
-    <style>
-        body {
-            font-family: Arial, sans-serif;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            height: 100vh;
-            margin: 0;
-            background-color: #f5f5f5;
-        }
-        .login-container {
-            background: white;
-            padding: 2rem;
-            border-radius: 8px;
-            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
-        }
-        .form-group {
-            margin-bottom: 1rem;
-        }
-        label {
-            display: block;
-            margin-bottom: 0.5rem;
-        }
-        input {
-            width: 100%;
-            padding: 0.5rem;
-            border: 1px solid #ddd;
-            border-radius: 4px;
-        }
-        button {
-            width: 100%;
-            padding: 0.75rem;
-            background-color: #007bff;
-            color: white;
-            border: none;
-            border-radius: 4px;
-            cursor: pointer;
-        }
-        button:hover {
-            background-color: #0056b3;
-        }
-        .error {
-            color: red;
-            margin-top: 1rem;
-        }
-    </style>
+   <title>Login</title>
+   <style>
+       body {
+           font-family: Arial, sans-serif;
+           display: flex;
+           justify-content: center;
+           align-items: center;
+           height: 100vh;
+           margin: 0;
+           background-color: #f5f5f5;
+       }
+       .login-container {
+           background: white;
+           padding: 2rem;
+           border-radius: 8px;
+           box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+           width: 100%;
+           max-width: 400px;
+       }
+       .form-group {
+           margin-bottom: 1rem;
+       }
+       label {
+           display: block;
+           margin-bottom: 0.5rem;
+           font-weight: 500;
+       }
+       input {
+           width: 100%;
+           padding: 0.75rem;
+           border: 1px solid #ddd;
+           border-radius: 4px;
+           font-size: 1rem;
+       }
+       input:focus {
+           outline: none;
+           border-color: #007bff;
+           box-shadow: 0 0 0 2px rgba(0,123,255,0.25);
+       }
+       button {
+           width: 100%;
+           padding: 0.75rem;
+           background-color: #007bff;
+           color: white;
+           border: none;
+           border-radius: 4px;
+           cursor: pointer;
+           font-size: 1rem;
+           font-weight: 500;
+           transition: background-color 0.2s;
+       }
+       button:hover {
+           background-color: #0056b3;
+       }
+       button:disabled {
+           background-color: #ccc;
+           cursor: not-allowed;
+       }
+       .error {
+           color: #dc3545;
+           margin-top: 1rem;
+           padding: 0.5rem;
+           border-radius: 4px;
+           background-color: rgba(220,53,69,0.1);
+           text-align: center;
+           display: none;
+       }
+       .logo {
+           text-align: center;
+           margin-bottom: 2rem;
+       }
+       .logo h1 {
+           color: #007bff;
+           margin: 0;
+       }
+   </style>
 </head>
 <body>
-    <div class="login-container">
-        <h2>Login</h2>
-        <form id="loginForm">
-            <div class="form-group">
-                <label for="username">Usuário:</label>
-                <input type="text" id="username" name="username" required>
-            </div>
-            <div class="form-group">
-                <label for="password">Senha:</label>
-                <input type="password" id="password" name="password" required>
-            </div>
-            <button type="submit">Entrar</button>
-            <div id="error" class="error" style="display: none;"></div>
-        </form>
-    </div>
-    <script>
-        document.getElementById('loginForm').addEventListener('submit', async (e) => {
-            e.preventDefault();
-            
-            const formData = new FormData();
-            formData.append('username', document.getElementById('username').value);
-            formData.append('password', document.getElementById('password').value);
-            
-            try {
-                const response = await fetch('/token', {
-                    method: 'POST',
-                    body: formData
-                });
-                
-                const data = await response.json();
-                
-                if (response.ok) {
-                    localStorage.setItem('token', data.access_token);
-                    window.location.href = '/'; // Redireciona para a página principal
-                } else {
-                    document.getElementById('error').textContent = 'Usuário ou senha incorretos';
-                    document.getElementById('error').style.display = 'block';
-                }
-            } catch (error) {
-                document.getElementById('error').textContent = 'Erro ao fazer login';
-                document.getElementById('error').style.display = 'block';
-            }
-        });
-    </script>
+   <div class="login-container">
+       <div class="logo">
+           <h1>RSVP</h1>
+           <p>Sistema de Gerenciamento de Eventos</p>
+       </div>
+       <form id="loginForm">
+           <div class="form-group">
+               <label for="username">Usuário:</label>
+               <input type="text" id="username" name="username" required autocomplete="username">
+           </div>
+           <div class="form-group">
+               <label for="password">Senha:</label>
+               <input type="password" id="password" name="password" required autocomplete="current-password">
+           </div>
+           <button type="submit" id="submitButton">Entrar</button>
+           <div id="error" class="error"></div>
+       </form>
+   </div>
+
+   <script>
+       const form = document.getElementById('loginForm');
+       const submitButton = document.getElementById('submitButton');
+       const errorDiv = document.getElementById('error');
+
+       form.addEventListener('submit', async (e) => {
+           e.preventDefault();
+           submitButton.disabled = true;
+           submitButton.textContent = 'Entrando...';
+           errorDiv.style.display = 'none';
+           
+           const formData = new FormData();
+           formData.append('username', document.getElementById('username').value);
+           formData.append('password', document.getElementById('password').value);
+           
+           try {
+               const response = await fetch('/token', {
+                   method: 'POST',
+                   body: formData
+               });
+               
+               const data = await response.json();
+               
+               if (response.ok) {
+                   localStorage.setItem('token', data.access_token);
+                   localStorage.setItem('user_type', data.is_admin ? 'admin' : 'user');
+                   
+                   // Redireciona para a página correta baseado no tipo de usuário
+                   window.location.href = '/eventos';
+               } else {
+                   errorDiv.textContent = 'Usuário ou senha incorretos';
+                   errorDiv.style.display = 'block';
+               }
+           } catch (error) {
+               console.error('Erro:', error);
+               errorDiv.textContent = 'Erro ao fazer login. Tente novamente.';
+               errorDiv.style.display = 'block';
+           } finally {
+               submitButton.disabled = false;
+               submitButton.textContent = 'Entrar';
+           }
+       });
+
+       // Limpa mensagens de erro quando o usuário começa a digitar
+       document.getElementById('username').addEventListener('input', () => {
+           errorDiv.style.display = 'none';
+       });
+       
+       document.getElementById('password').addEventListener('input', () => {
+           errorDiv.style.display = 'none';
+       });
+   </script>
 </body>
 </html>

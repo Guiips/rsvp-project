@@ -10,6 +10,7 @@ from pathlib import Path
 from services.email_service import email_service
 from routes.auth import router as auth_router
 from fastapi.security import OAuth2PasswordBearer
+from routes.relatorios import router as relatorios_router
 
 # Inicializa o FastAPI (APENAS UMA VEZ)
 app = FastAPI(
@@ -20,6 +21,7 @@ app = FastAPI(
     redoc_url="/api/redoc"
 )
 
+
 # Obtém o diretório base do projeto (APENAS UMA VEZ)
 BASE_DIR = Path(__file__).resolve().parent
 
@@ -29,6 +31,12 @@ templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
 # Adiciona o router de autenticação
 app.include_router(auth_router)
 
+app.include_router(
+    relatorios_router,
+    prefix="/api/relatorios",
+    tags=["relatorios"]
+)
+
 # Configuração do CORS
 app.add_middleware(
     CORSMiddleware,
@@ -37,6 +45,7 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"]
 )
+
 
 # Rota raiz redireciona para login
 @app.get("/")

@@ -8,6 +8,26 @@ from config.database import conectar_db, fechar_conexao
 import os
 from pathlib import Path
 from services.email_service import email_service
+from routes.auth import router as auth_router
+from fastapi.security import OAuth2PasswordBearer
+
+# Inicializa o FastAPI
+app = FastAPI(
+    title="Sistema RSVP",
+    description="Sistema para gerenciamento de eventos e confirmações de presença",
+    version="1.0.0",
+    docs_url="/api/docs",
+    redoc_url="/api/redoc"
+)
+
+# Obtém o diretório base do projeto
+BASE_DIR = Path(__file__).resolve().parent
+
+# Configuração dos templates
+templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
+
+# Adiciona o router de autenticação
+app.include_router(auth_router)
 
 # Inicializa o FastAPI
 app = FastAPI(
@@ -36,6 +56,10 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"]
 )
+
+@app.get("/login")
+async def login_page(request: Request):
+    return templates.TemplateResponse("login.html", {"request": request})
 
 # Inclui as rotas de eventos
 app.include_router(

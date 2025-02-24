@@ -175,7 +175,7 @@ $(document).ready(function() {
     function atualizarListaConvidados(convidados) {
         const tbody = $('#listaConvidados');
         tbody.empty();
-
+    
         convidados.forEach(function(convidado) {
             const tr = $('<tr>');
             tr.append($('<td>').text(convidado.nome));
@@ -185,6 +185,8 @@ $(document).ready(function() {
             
             // Coluna de ações
             const tdAcoes = $('<td>');
+            
+            // Botão de reenviar email
             const btnReenviar = $('<button>')
                 .addClass('btn btn-sm btn-outline-primary me-1')
                 .html('<i class="bi bi-envelope"></i>')
@@ -192,10 +194,45 @@ $(document).ready(function() {
                 .click(function() {
                     enviarEmailIndividual(convidado);
                 });
-            tdAcoes.append(btnReenviar);
+            
+            // Botão de excluir
+            const btnExcluir = $('<button>')
+                .addClass('btn btn-sm btn-outline-danger')
+                .html('<i class="bi bi-trash"></i>')
+                .attr('title', 'Excluir Convidado')
+                .click(function() {
+                    excluirConvidado(convidado);
+                });
+            
+            tdAcoes.append(btnReenviar, btnExcluir);
             tr.append(tdAcoes);
             
             tbody.append(tr);
+        });
+    }
+    
+    // Função para excluir convidado
+    function excluirConvidado(convidado) {
+        if (!confirm(`Tem certeza que deseja excluir o convidado ${convidado.nome}?`)) {
+            return;
+        }
+    
+        const eventoId = window.location.pathname.split('/').pop();
+    
+        $.ajax({
+            url: `/api/eventos/${eventoId}/convidados/excluir`,
+            method: 'DELETE',
+            contentType: 'application/json',
+            data: JSON.stringify({
+                email: convidado.email
+            }),
+            success: function(response) {
+                alert('Convidado excluído com sucesso!');
+                carregarEvento(); // Recarrega a lista de convidados
+            },
+            error: function(xhr, status, error) {
+                alert('Erro ao excluir convidado: ' + error);
+            }
         });
     }
 

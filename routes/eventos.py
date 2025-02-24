@@ -10,7 +10,7 @@ from datetime import datetime
 import io
 from openpyxl import load_workbook
 from jose import jwt
-from routes.auth import SECRET_KEY
+from config.secrets import SECRET_KEY  # Importe de config.secrets em vez de auth
 
 # Cria o roteador de eventos
 eventos_router = APIRouter()
@@ -364,59 +364,88 @@ async def enviar_email_convidado(
 async def confirmar_convite(token: str, request: Request):
     """Confirma a presença do convidado usando token JWT"""
     try:
-        db = obter_db()
-        decoded_token = jwt.decode(token, SECRET_KEY, algorithms=["HS256"])
+        # Imprima o token para depuração (remova em produção)
+        print(f"Token recebido para confirmação: {token}")
         
-        evento_id = decoded_token.get('evento_id')
-        email_convidado = decoded_token.get('email')
-        
-        print(f"Token decodificado - evento_id: {evento_id}, email: {email_convidado}")
-        
-        evento = await db.eventos.find_one({"_id": ObjectId(evento_id)})
-        
-        if not evento:
+        # Tente decodificar o token com tratamento de erro explícito
+        try:
+            db = obter_db()
+            decoded_token = jwt.decode(token, SECRET_KEY, algorithms=["HS256"])
+            print(f"Token decodificado com sucesso: {decoded_token}")
+            
+            evento_id = decoded_token.get('evento_id')
+            email_convidado = decoded_token.get('email')
+            
+            if not evento_id or not email_convidado:
+                raise ValueError("Token não contém todas as informações necessárias")
+            
+            print(f"Processando confirmação para evento_id={evento_id}, email={email_convidado}")
+            
+            evento = await db.eventos.find_one({"_id": ObjectId(evento_id)})
+            
+            if not evento:
+                return templates.TemplateResponse("confirmacao_erro.html", {
+                    "request": request, 
+                    "mensagem": "Evento não encontrado."
+                })
+            
+            convidados = evento.get('convidados', [])
+            convidado_atualizado = False
+            convidado_info = None
+            
+            for convidado in convidados:
+                if convidado.get('email') == email_convidado:
+                    convidado['status'] = 'confirmado'
+                    convidado_atualizado = True
+                    convidado_info = convidado
+                    break
+            
+            if convidado_atualizado:
+                await db.eventos.update_one(
+                    {"_id": ObjectId(evento_id)},
+                    {"$set": {"convidados": convidados}}
+                )
+                
+                print(f"Confirmação processada com sucesso. Status: confirmado")
+                
+                return templates.TemplateResponse("confirmacao_sucesso.html", {
+                    "request": request, 
+                    "evento": evento,
+                    "status": "confirmado",
+                    "email": email_convidado,
+                    "convidado": convidado_info
+                })
+            else:
+                return templates.TemplateResponse("confirmacao_erro.html", {
+                    "request": request, 
+                    "mensagem": "Convidado não encontrado."
+                })
+                
+        except jwt.InvalidSignatureError:
+            print("Erro: Assinatura do token inválida")
             return templates.TemplateResponse("confirmacao_erro.html", {
                 "request": request, 
-                "mensagem": "Evento não encontrado."
+                "mensagem": "Link de confirmação inválido: assinatura inválida."
             })
-        
-        convidados = evento.get('convidados', [])
-        convidado_atualizado = False
-        convidado_info = None
-        
-        for convidado in convidados:
-            if convidado.get('email') == email_convidado:
-                convidado['status'] = 'confirmado'
-                convidado_atualizado = True
-                convidado_info = convidado
-                break
-        
-        if convidado_atualizado:
-            await db.eventos.update_one(
-                {"_id": ObjectId(evento_id)},
-                {"$set": {"convidados": convidados}}
-            )
-            
-            print(f"Confirmação processada. Status: confirmado")
-            
-            return templates.TemplateResponse("confirmacao_sucesso.html", {
-                "request": request, 
-                "evento": evento,
-                "status": "confirmado",
-                "email": email_convidado,
-                "convidado": convidado_info
-            })
-        else:
+        except jwt.DecodeError:
+            print("Erro: Não foi possível decodificar o token")
             return templates.TemplateResponse("confirmacao_erro.html", {
                 "request": request, 
-                "mensagem": "Convidado não encontrado."
+                "mensagem": "Link de confirmação inválido: formato inválido."
+            })
+        except jwt.ExpiredSignatureError:
+            print("Erro: Token expirado")
+            return templates.TemplateResponse("confirmacao_erro.html", {
+                "request": request, 
+                "mensagem": "Link de confirmação expirado."
+            })
+        except Exception as token_error:
+            print(f"Erro ao processar token: {str(token_error)}")
+            return templates.TemplateResponse("confirmacao_erro.html", {
+                "request": request, 
+                "mensagem": f"Erro ao processar confirmação: {str(token_error)}"
             })
     
-    except jwt.ExpiredSignatureError:
-        return templates.TemplateResponse("confirmacao_erro.html", {
-            "request": request, 
-            "mensagem": "Link de confirmação expirado."
-        })
     except Exception as e:
         print(f"Erro ao processar confirmação: {str(e)}")
         return templates.TemplateResponse("confirmacao_erro.html", {
@@ -429,66 +458,96 @@ async def confirmar_convite(token: str, request: Request):
 async def recusar_convite(token: str, request: Request):
     """Recusa o convite usando token JWT"""
     try:
-        db = obter_db()
-        decoded_token = jwt.decode(token, SECRET_KEY, algorithms=["HS256"])
+        # Imprima o token para depuração (remova em produção)
+        print(f"Token recebido para recusa: {token}")
         
-        evento_id = decoded_token.get('evento_id')
-        email_convidado = decoded_token.get('email')
-        
-        print(f"Token decodificado (recusa) - evento_id: {evento_id}, email: {email_convidado}")
-        
-        evento = await db.eventos.find_one({"_id": ObjectId(evento_id)})
-        
-        if not evento:
+        # Tente decodificar o token com tratamento de erro explícito
+        try:
+            db = obter_db()
+            decoded_token = jwt.decode(token, SECRET_KEY, algorithms=["HS256"])
+            print(f"Token decodificado com sucesso: {decoded_token}")
+            
+            evento_id = decoded_token.get('evento_id')
+            email_convidado = decoded_token.get('email')
+            
+            if not evento_id or not email_convidado:
+                raise ValueError("Token não contém todas as informações necessárias")
+            
+            print(f"Processando recusa para evento_id={evento_id}, email={email_convidado}")
+            
+            evento = await db.eventos.find_one({"_id": ObjectId(evento_id)})
+            
+            if not evento:
+                return templates.TemplateResponse("confirmacao_erro.html", {
+                    "request": request, 
+                    "mensagem": "Evento não encontrado."
+                })
+            
+            convidados = evento.get('convidados', [])
+            convidado_atualizado = False
+            convidado_info = None
+            
+            for convidado in convidados:
+                if convidado.get('email') == email_convidado:
+                    convidado['status'] = 'recusado'
+                    convidado_atualizado = True
+                    convidado_info = convidado
+                    break
+            
+            if convidado_atualizado:
+                await db.eventos.update_one(
+                    {"_id": ObjectId(evento_id)},
+                    {"$set": {"convidados": convidados}}
+                )
+                
+                print(f"Recusa processada com sucesso. Status: recusado")
+                
+                return templates.TemplateResponse("confirmacao_sucesso.html", {
+                    "request": request, 
+                    "evento": evento,
+                    "status": "recusado",
+                    "email": email_convidado,
+                    "convidado": convidado_info
+                })
+            else:
+                return templates.TemplateResponse("confirmacao_erro.html", {
+                    "request": request, 
+                    "mensagem": "Convidado não encontrado."
+                })
+                
+        except jwt.InvalidSignatureError:
+            print("Erro: Assinatura do token inválida")
             return templates.TemplateResponse("confirmacao_erro.html", {
                 "request": request, 
-                "mensagem": "Evento não encontrado."
+                "mensagem": "Link de recusa inválido: assinatura inválida."
             })
-        
-        convidados = evento.get('convidados', [])
-        convidado_atualizado = False
-        convidado_info = None
-        
-        for convidado in convidados:
-            if convidado.get('email') == email_convidado:
-                convidado['status'] = 'recusado'
-                convidado_atualizado = True
-                convidado_info = convidado
-                break
-        
-        if convidado_atualizado:
-            await db.eventos.update_one(
-                {"_id": ObjectId(evento_id)},
-                {"$set": {"convidados": convidados}}
-            )
-            
-            print(f"Recusa processada. Status: recusado")
-            
-            return templates.TemplateResponse("confirmacao_sucesso.html", {
-                "request": request, 
-                "evento": evento,
-                "status": "recusado",
-                "email": email_convidado,
-                "convidado": convidado_info
-            })
-        else:
+        except jwt.DecodeError:
+            print("Erro: Não foi possível decodificar o token")
             return templates.TemplateResponse("confirmacao_erro.html", {
                 "request": request, 
-                "mensagem": "Convidado não encontrado."
+                "mensagem": "Link de recusa inválido: formato inválido."
+            })
+        except jwt.ExpiredSignatureError:
+            print("Erro: Token expirado")
+            return templates.TemplateResponse("confirmacao_erro.html", {
+                "request": request, 
+                "mensagem": "Link de recusa expirado."
+            })
+        except Exception as token_error:
+            print(f"Erro ao processar token: {str(token_error)}")
+            return templates.TemplateResponse("confirmacao_erro.html", {
+                "request": request, 
+                "mensagem": f"Erro ao processar recusa: {str(token_error)}"
             })
     
-    except jwt.ExpiredSignatureError:
-        return templates.TemplateResponse("confirmacao_erro.html", {
-            "request": request, 
-            "mensagem": "Link de confirmação expirado."
-        })
     except Exception as e:
         print(f"Erro ao processar recusa: {str(e)}")
         return templates.TemplateResponse("confirmacao_erro.html", {
             "request": request, 
             "mensagem": f"Erro ao processar recusa: {str(e)}"
         })
-
+        
+        
 
 @eventos_router.delete("/{evento_id}/convidados/excluir")
 async def excluir_convidado(

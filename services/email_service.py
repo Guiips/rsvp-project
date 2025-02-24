@@ -6,6 +6,7 @@ from jose import jwt
 from datetime import datetime, timedelta
 import os
 from dotenv import load_dotenv
+from config.secrets import SECRET_KEY  # Importar de config.secrets para evitar importação circular
 
 # Carregar variáveis de ambiente
 load_dotenv()
@@ -17,17 +18,19 @@ SMTP_USERNAME = os.getenv('MAIL_USERNAME')
 SMTP_PASSWORD = os.getenv('MAIL_PASSWORD')
 SENDER_EMAIL = os.getenv('MAIL_FROM')
 
-# Chave secreta (importe de auth ou defina aqui)
-SECRET_KEY = "sistema_rsvp_secret_key_2024"
-
 # URL base do site
 BASE_URL = "https://rsvpcodevents.online"
 
 class EmailService:
     @staticmethod
-    def gerar_token_confirmacao(evento_id, email_convidado):
+    def gerar_token_confirmacao(evento_id, email_convidado, acao='confirmar'):
         """
-        Gera um token JWT para confirmação de convite
+        Gera um token JWT para confirmação ou recusa de convite
+        
+        Args:
+            evento_id: ID do evento
+            email_convidado: Email do convidado
+            acao: 'confirmar' ou 'recusar'
         """
         try:
             # Token expira em 7 dias
@@ -36,9 +39,11 @@ class EmailService:
             payload = {
                 "evento_id": str(evento_id),
                 "email": email_convidado,
+                "acao": acao,
                 "exp": expiracao
             }
             
+            print(f"Gerando token para evento_id={evento_id}, email={email_convidado}, acao={acao}")
             token = jwt.encode(payload, SECRET_KEY, algorithm="HS256")
             return token
         except Exception as e:
@@ -59,6 +64,9 @@ class EmailService:
             smtp_port = SMTP_PORT
             smtp_username = SMTP_USERNAME
             smtp_password = SMTP_PASSWORD
+            
+            # Debug
+            print(f"Enviando email para {email} usando servidor {smtp_server}:{smtp_port}")
             
             # Criar a mensagem de email
             message = MIMEMultipart("alternative")
@@ -136,7 +144,7 @@ class EmailService:
             message.attach(part1)
             message.attach(part2)
             
-            # Tentar com o smtplib padrão (mais confiável e menos propenso a erros de TLS)
+            # Tentar com o smtplib padrão
             try:
                 with smtplib.SMTP(smtp_server, smtp_port) as server:
                     # Inicie TLS apenas se a porta for 587 ou 25
@@ -178,14 +186,14 @@ class EmailService:
             base_url = BASE_URL
             
         # Token para confirmar presença
-        token_confirmacao = EmailService.gerar_token_confirmacao(evento_id, email_convidado)
+        token_confirmacao = EmailService.gerar_token_confirmacao(evento_id, email_convidado, acao='confirmar')
         
-        # Token para recusar presença (mesma estrutura, mas vamos diferenciá-los na rota)
-        token_recusa = jwt.encode({
-            "evento_id": str(evento_id),
-            "email": email_convidado,
-            "exp": datetime.utcnow() + timedelta(days=7)
-        }, SECRET_KEY, algorithm="HS256")
+        # Token para recusar presença
+        token_recusa = EmailService.gerar_token_confirmacao(evento_id, email_convidado, acao='recusar')
+        
+        # Debug
+        print(f"Link confirmação base: {base_url}/api/eventos/confirmar/")
+        print(f"Link recusa base: {base_url}/api/eventos/recusar/")
         
         # Criar links completos
         link_confirmacao = f"{base_url}/api/eventos/confirmar/{token_confirmacao}"

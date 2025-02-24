@@ -136,22 +136,35 @@ class EmailService:
             message.attach(part1)
             message.attach(part2)
             
-            # Tentar com aiosmtplib primeiro (assíncrono)
+            # Tentar com o smtplib padrão (mais confiável e menos propenso a erros de TLS)
             try:
-                async with aiosmtplib.SMTP(hostname=smtp_server, port=smtp_port) as server:
-                    await server.starttls()
-                    await server.login(smtp_username, smtp_password)
-                    await server.send_message(message)
-            except ImportError:
-                # Fallback para smtplib padrão se aiosmtplib não estiver disponível
                 with smtplib.SMTP(smtp_server, smtp_port) as server:
-                    server.starttls()
+                    # Inicie TLS apenas se a porta for 587 ou 25
+                    if smtp_port in [587, 25]:
+                        server.starttls()
                     server.login(smtp_username, smtp_password)
                     server.send_message(message)
-            
-            print(f"Email enviado com sucesso para {email}")
-            return True
-            
+                    print(f"Email enviado com sucesso para {email}")
+                    return True
+            except Exception as smtp_error:
+                print(f"Erro ao enviar email com smtplib: {str(smtp_error)}")
+                # Tentar com aiosmtplib como fallback
+                try:
+                    # Use SSL diretamente se a porta for 465, caso contrário use starttls
+                    if smtp_port == 465:
+                        async with aiosmtplib.SMTP(hostname=smtp_server, port=smtp_port, use_tls=True) as server:
+                            await server.login(smtp_username, smtp_password)
+                            await server.send_message(message)
+                    else:
+                        async with aiosmtplib.SMTP(hostname=smtp_server, port=smtp_port) as server:
+                            await server.starttls()
+                            await server.login(smtp_username, smtp_password)
+                            await server.send_message(message)
+                    print(f"Email enviado com sucesso para {email} (via aiosmtplib)")
+                    return True
+                except Exception as async_error:
+                    print(f"Erro ao enviar email com aiosmtplib: {str(async_error)}")
+                    raise
         except Exception as e:
             print(f"Erro ao enviar email para {email}: {str(e)}")
             return False

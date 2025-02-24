@@ -16,6 +16,8 @@ SMTP_USERNAME = os.getenv('MAIL_USERNAME')
 SMTP_PASSWORD = os.getenv('MAIL_PASSWORD')
 SENDER_EMAIL = os.getenv('MAIL_FROM')
 
+# Chave secreta (importe de auth ou defina aqui)
+SECRET_KEY = "sistema_rsvp_secret_key_2024"
 
 # URL base do site
 BASE_URL = "https://rsvpcodevents.online"
@@ -105,16 +107,21 @@ class EmailService:
             msg.attach(MIMEText(corpo_email, 'html'))
             
             # Envie o email
-            with smtplib.SMTP(SMTP_SERVER, SMTP_PORT) as server:
-                server.starttls()
-                server.login(SMTP_USERNAME, SMTP_PASSWORD)
-                server.send_message(msg)
+            try:
+                with smtplib.SMTP(SMTP_SERVER, SMTP_PORT) as server:
+                    server.starttls()
+                    server.login(SMTP_USERNAME, SMTP_PASSWORD)
+                    server.send_message(msg)
+                
+                print(f"Email enviado com sucesso para {email}")
+                return True
             
-            print(f"Email enviado com sucesso para {email}")
-            return True
+            except Exception as send_error:
+                print(f"Erro detalhado ao enviar email para {email}: {send_error}")
+                return False
         
         except Exception as e:
-            print(f"Erro ao enviar email para {email}: {e}")
+            print(f"Erro ao preparar email para {email}: {e}")
             return False
 
 # Cria uma instância do serviço de email

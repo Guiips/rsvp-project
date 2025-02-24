@@ -16,8 +16,6 @@ SMTP_USERNAME = os.getenv('MAIL_USERNAME')
 SMTP_PASSWORD = os.getenv('MAIL_PASSWORD')
 SENDER_EMAIL = os.getenv('MAIL_FROM')
 
-# Chave secreta para tokens (você pode gerar uma chave única)
-SECRET_KEY = "sistema_rsvp_secret_key_2024"
 
 # URL base do site
 BASE_URL = "https://rsvpcodevents.online"
@@ -45,9 +43,18 @@ class EmailService:
             return None
 
     @staticmethod
-    def enviar_convite_email(evento, convidado):
+    async def enviar_email_confirmacao(
+        email: str, 
+        nome: str, 
+        evento_nome: str, 
+        evento_data: str, 
+        evento_hora: str, 
+        evento_local: str, 
+        link_confirmacao: str, 
+        link_recusa: str
+    ):
         """
-        Envia email de convite para um convidado
+        Envia email de confirmação
         """
         try:
             # Validar configurações de email
@@ -55,39 +62,29 @@ class EmailService:
                 print("Configurações de email incompletas")
                 return False
 
-            # Gere tokens de confirmação e recusa
-            token_confirmacao = EmailService.gerar_token_confirmacao(evento['_id'], convidado['email'])
-            token_recusa = EmailService.gerar_token_confirmacao(evento['_id'], convidado['email'])
-            
-            if not token_confirmacao or not token_recusa:
-                print("Falha ao gerar tokens")
-                return False
-
-            # Links de confirmação
-            link_confirmacao = f"{BASE_URL}/eventos/confirmar/{token_confirmacao}"
-            link_recusa = f"{BASE_URL}/eventos/recusar/{token_recusa}"
-            
             # Crie a mensagem de email
             msg = MIMEMultipart()
             msg['From'] = SENDER_EMAIL
-            msg['To'] = convidado['email']
-            msg['Subject'] = f"Convite para o evento: {evento['nome']}"
+            msg['To'] = email
+            msg['Subject'] = f"Convite para o evento: {evento_nome}"
             
             # Corpo do email em HTML
             corpo_email = f"""
             <html>
             <body style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
                 <div style="background-color: #f4f4f4; padding: 20px; text-align: center;">
-                    <h2>Convite para o Evento: {evento['nome']}</h2>
+                    <h2>Convite para o Evento: {evento_nome}</h2>
                     
                     <div style="background-color: white; padding: 20px; border-radius: 10px; margin: 20px 0;">
                         <h3>Detalhes do Evento</h3>
-                        <p><strong>Data:</strong> {evento['data']}</p>
-                        <p><strong>Local:</strong> {evento['local']}</p>
+                        <p><strong>Nome:</strong> {evento_nome}</p>
+                        <p><strong>Data:</strong> {evento_data}</p>
+                        <p><strong>Hora:</strong> {evento_hora}</p>
+                        <p><strong>Local:</strong> {evento_local}</p>
                     </div>
                     
                     <div style="margin: 20px 0;">
-                        <p>Por favor, confirme sua participação:</p>
+                        <p>Olá {nome}, por favor, confirme sua participação:</p>
                         <a href="{link_confirmacao}" style="background-color: #4CAF50; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px; margin-right: 10px;">
                             Confirmar Presença
                         </a>
@@ -113,55 +110,12 @@ class EmailService:
                 server.login(SMTP_USERNAME, SMTP_PASSWORD)
                 server.send_message(msg)
             
-            print(f"Email enviado com sucesso para {convidado['email']}")
+            print(f"Email enviado com sucesso para {email}")
             return True
         
         except Exception as e:
-            print(f"Erro ao enviar email para {convidado['email']}: {e}")
+            print(f"Erro ao enviar email para {email}: {e}")
             return False
 
-    @staticmethod
-    def enviar_email_confirmacao(evento, convidado, status):
-        """
-        Envia email de confirmação ou recusa
-        """
-        try:
-            msg = MIMEMultipart()
-            msg['From'] = SENDER_EMAIL
-            msg['To'] = convidado['email']
-            
-            if status == 'confirmado':
-                msg['Subject'] = f"Confirmação de Presença - {evento['nome']}"
-                corpo_email = f"""
-                <html>
-                <body>
-                    <h2>Presença Confirmada</h2>
-                    <p>Você confirmou presença no evento: {evento['nome']}</p>
-                    <p>Data: {evento['data']}</p>
-                    <p>Local: {evento['local']}</p>
-                </body>
-                </html>
-                """
-            else:
-                msg['Subject'] = f"Convite Recusado - {evento['nome']}"
-                corpo_email = f"""
-                <html>
-                <body>
-                    <h2>Convite Recusado</h2>
-                    <p>Você recusou o convite para o evento: {evento['nome']}</p>
-                </body>
-                </html>
-                """
-            
-            msg.attach(MIMEText(corpo_email, 'html'))
-            
-            with smtplib.SMTP(SMTP_SERVER, SMTP_PORT) as server:
-                server.starttls()
-                server.login(SMTP_USERNAME, SMTP_PASSWORD)
-                server.send_message(msg)
-            
-            return True
-        
-        except Exception as e:
-            print(f"Erro ao enviar email de confirmação: {e}")
-            return False
+# Cria uma instância do serviço de email
+email_service = EmailService()

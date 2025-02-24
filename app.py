@@ -58,9 +58,10 @@ async def login_page(request: Request):
 
 
 # Inclui as rotas de eventos
+# Na seção de inclusão de rotas
 app.include_router(
     eventos_router,
-    prefix="/api/eventos",
+    prefix="/api/eventos",  # Prefixo importante
     tags=["eventos"]
 )
 

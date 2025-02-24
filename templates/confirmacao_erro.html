@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container mt-5">
+    <div class="card text-center">
+        <div class="card-header bg-danger text-white">
+            <h3>Erro na Confirmação</h3>
+        </div>
+        <div class="card-body">
+            <h4>{{ mensagem }}</h4>
+            <p>Entre em contato com o organizador do evento para mais informações.</p>
+        </div>
+    </div>
+</div>
+{% endblock %}

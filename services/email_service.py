@@ -1,100 +1,167 @@
-from fastapi_mail import FastMail, MessageSchema, ConnectionConfig
-from pydantic import EmailStr
+import smtplib
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
+from jose import jwt
+from datetime import datetime, timedelta
 import os
 from dotenv import load_dotenv
-import logging
 
-# Configuração de logging
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
-
-# Carrega variáveis de ambiente
+# Carregar variáveis de ambiente
 load_dotenv()
 
-# Configuração do serviço de email
-conf = ConnectionConfig(
-    MAIL_USERNAME=os.getenv("MAIL_USERNAME"),
-    MAIL_PASSWORD=os.getenv("MAIL_PASSWORD"),
-    MAIL_FROM=os.getenv("MAIL_FROM"),
-    MAIL_PORT=int(os.getenv("MAIL_PORT", 587)),
-    MAIL_SERVER=os.getenv("MAIL_SERVER"),
-    MAIL_STARTTLS=True,
-    MAIL_SSL_TLS=False,
-    USE_CREDENTIALS=True
-)
+# Configurações de email do .env
+SMTP_SERVER = os.getenv('MAIL_SERVER', 'smtp.gmail.com')
+SMTP_PORT = int(os.getenv('MAIL_PORT', 587))
+SMTP_USERNAME = os.getenv('MAIL_USERNAME')
+SMTP_PASSWORD = os.getenv('MAIL_PASSWORD')
+SENDER_EMAIL = os.getenv('MAIL_FROM')
+
+# Chave secreta para tokens (você pode gerar uma chave única)
+SECRET_KEY = "sistema_rsvp_secret_key_2024"
+
+# URL base do site
+BASE_URL = "https://rsvpcodevents.online"
 
 class EmailService:
-    def __init__(self):
-        self.fastmail = FastMail(conf)
-        
-    async def enviar_email_confirmacao(
-        self,
-        email: str,
-        nome: str,
-        evento_nome: str,
-        evento_data: str,
-        evento_hora: str,
-        evento_local: str,
-        link_confirmacao: str,
-        link_recusa: str
-    ) -> bool:
+    @staticmethod
+    def gerar_token_confirmacao(evento_id, email_convidado):
+        """
+        Gera um token JWT para confirmação de convite
+        """
         try:
-            # Template HTML do email com design melhorado
-            html = f"""
+            # Token expira em 7 dias
+            expiracao = datetime.utcnow() + timedelta(days=7)
+            
+            payload = {
+                "evento_id": str(evento_id),
+                "email": email_convidado,
+                "exp": expiracao
+            }
+            
+            token = jwt.encode(payload, SECRET_KEY, algorithm="HS256")
+            return token
+        except Exception as e:
+            print(f"Erro ao gerar token de confirmação: {e}")
+            return None
+
+    @staticmethod
+    def enviar_convite_email(evento, convidado):
+        """
+        Envia email de convite para um convidado
+        """
+        try:
+            # Validar configurações de email
+            if not all([SMTP_SERVER, SMTP_PORT, SMTP_USERNAME, SMTP_PASSWORD]):
+                print("Configurações de email incompletas")
+                return False
+
+            # Gere tokens de confirmação e recusa
+            token_confirmacao = EmailService.gerar_token_confirmacao(evento['_id'], convidado['email'])
+            token_recusa = EmailService.gerar_token_confirmacao(evento['_id'], convidado['email'])
+            
+            if not token_confirmacao or not token_recusa:
+                print("Falha ao gerar tokens")
+                return False
+
+            # Links de confirmação
+            link_confirmacao = f"{BASE_URL}/eventos/confirmar/{token_confirmacao}"
+            link_recusa = f"{BASE_URL}/eventos/recusar/{token_recusa}"
+            
+            # Crie a mensagem de email
+            msg = MIMEMultipart()
+            msg['From'] = SENDER_EMAIL
+            msg['To'] = convidado['email']
+            msg['Subject'] = f"Convite para o evento: {evento['nome']}"
+            
+            # Corpo do email em HTML
+            corpo_email = f"""
             <html>
-                <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333; background-color: #f8f9fa; margin: 0; padding: 0;">
-                    <div style="max-width: 600px; margin: 20px auto; background: white; padding: 20px; border-radius: 10px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
-                        <h2 style="color: #1a73e8; margin-bottom: 20px;">Olá, {nome}!</h2>
-                        <p>Você foi convidado(a) para o evento <strong>{evento_nome}</strong>.</p>
-                        
-                        <div style="background-color: #f8f9fa; padding: 15px; border-radius: 5px; margin: 20px 0;">
-                            <p style="margin: 5px 0;"><strong>Data:</strong> {evento_data}</p>
-                            <p style="margin: 5px 0;"><strong>Hora:</strong> {evento_hora}</p>
-                            <p style="margin: 5px 0;"><strong>Local:</strong> {evento_local}</p>
-                        </div>
-                        
-                        <p>Por favor, confirme sua presença clicando em um dos botões abaixo:</p>
-                        
-                        <div style="text-align: center; margin: 30px 0;">
-                            <a href="{link_confirmacao}" 
-                               style="background-color: #4CAF50; color: white; padding: 12px 25px; 
-                                      text-decoration: none; border-radius: 5px; margin: 0 10px; 
-                                      display: inline-block; font-weight: bold;">
-                                ✓ Confirmar Presença
-                            </a>
-                            
-                            <a href="{link_recusa}" 
-                               style="background-color: #dc3545; color: white; padding: 12px 25px; 
-                                      text-decoration: none; border-radius: 5px; margin: 10px; 
-                                      display: inline-block; font-weight: bold;">
-                                ✗ Não Poderei Comparecer
-                            </a>
-                        </div>
-                        
-                        <p style="margin-top: 30px;">Aguardamos sua resposta!</p>
-                        <p style="color: #666; font-size: 12px; border-top: 1px solid #eee; margin-top: 20px; padding-top: 20px;">
-                            Este é um email automático, por favor não responda.<br>
-                            Se você não conseguir clicar nos botões, copie e cole os links no seu navegador.
-                        </p>
+            <body style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+                <div style="background-color: #f4f4f4; padding: 20px; text-align: center;">
+                    <h2>Convite para o Evento: {evento['nome']}</h2>
+                    
+                    <div style="background-color: white; padding: 20px; border-radius: 10px; margin: 20px 0;">
+                        <h3>Detalhes do Evento</h3>
+                        <p><strong>Data:</strong> {evento['data']}</p>
+                        <p><strong>Local:</strong> {evento['local']}</p>
                     </div>
-                </body>
+                    
+                    <div style="margin: 20px 0;">
+                        <p>Por favor, confirme sua participação:</p>
+                        <a href="{link_confirmacao}" style="background-color: #4CAF50; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px; margin-right: 10px;">
+                            Confirmar Presença
+                        </a>
+                        <a href="{link_recusa}" style="background-color: #f44336; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px;">
+                            Recusar Convite
+                        </a>
+                    </div>
+                    
+                    <p style="color: #888; font-size: 12px;">
+                        Este link expirará em 7 dias. Caso não consiga clicar, copie e cole no navegador.
+                    </p>
+                </div>
+            </body>
             </html>
             """
-
-            message = MessageSchema(
-                subject=f"Convite para {evento_nome}",
-                recipients=[email],
-                body=html,
-                subtype="html"
-            )
-
-            await self.fastmail.send_message(message)
-            logger.info(f"Email enviado com sucesso para {email}")
-            return True
             
+            # Anexe o corpo do email
+            msg.attach(MIMEText(corpo_email, 'html'))
+            
+            # Envie o email
+            with smtplib.SMTP(SMTP_SERVER, SMTP_PORT) as server:
+                server.starttls()
+                server.login(SMTP_USERNAME, SMTP_PASSWORD)
+                server.send_message(msg)
+            
+            print(f"Email enviado com sucesso para {convidado['email']}")
+            return True
+        
         except Exception as e:
-            logger.error(f"Erro ao enviar email para {email}: {str(e)}")
-            raise
+            print(f"Erro ao enviar email para {convidado['email']}: {e}")
+            return False
 
-# Cria uma instância global do serviço de email
-email_service = EmailService()
+    @staticmethod
+    def enviar_email_confirmacao(evento, convidado, status):
+        """
+        Envia email de confirmação ou recusa
+        """
+        try:
+            msg = MIMEMultipart()
+            msg['From'] = SENDER_EMAIL
+            msg['To'] = convidado['email']
+            
+            if status == 'confirmado':
+                msg['Subject'] = f"Confirmação de Presença - {evento['nome']}"
+                corpo_email = f"""
+                <html>
+                <body>
+                    <h2>Presença Confirmada</h2>
+                    <p>Você confirmou presença no evento: {evento['nome']}</p>
+                    <p>Data: {evento['data']}</p>
+                    <p>Local: {evento['local']}</p>
+                </body>
+                </html>
+                """
+            else:
+                msg['Subject'] = f"Convite Recusado - {evento['nome']}"
+                corpo_email = f"""
+                <html>
+                <body>
+                    <h2>Convite Recusado</h2>
+                    <p>Você recusou o convite para o evento: {evento['nome']}</p>
+                </body>
+                </html>
+                """
+            
+            msg.attach(MIMEText(corpo_email, 'html'))
+            
+            with smtplib.SMTP(SMTP_SERVER, SMTP_PORT) as server:
+                server.starttls()
+                server.login(SMTP_USERNAME, SMTP_PASSWORD)
+                server.send_message(msg)
+            
+            return True
+        
+        except Exception as e:
+            print(f"Erro ao enviar email de confirmação: {e}")
+            return False

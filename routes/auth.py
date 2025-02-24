@@ -91,7 +91,7 @@ async def login(form_data: OAuth2PasswordRequestForm = Depends()):
         data={"sub": user.username, "admin": user.is_admin},
         expires_delta=access_token_expires
     )
-    return {"access_token": access_token, "token_type": "bearer"}
+    return {"access_token": access_token, "token_type": "bearer", "redirect_url": "/eventos"}  # Adicionado redirect_url
 
 # Middleware para proteção de rotas
 def admin_required(user: User = Depends(get_current_user)):

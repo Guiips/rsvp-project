@@ -82,10 +82,12 @@ async def adicionar_convidado(request: Request, evento_id: str, convidado: Convi
         if not evento:
             raise HTTPException(status_code=404, detail="Evento não encontrado")
 
-        # Gera os links de confirmação
-        base_url = str(request.base_url).rstrip('/')
-        link_confirmacao = f"{base_url}/api/eventos/confirmar-presenca/{evento_id}/{convidado.email}/sim"
-        link_recusa = f"{base_url}/api/eventos/confirmar-presenca/{evento_id}/{convidado.email}/nao"
+        # Gera os links de confirmação com tokens JWT
+        link_confirmacao, link_recusa = email_service.gerar_tokens_para_evento(
+            evento_id=evento_id,
+            email_convidado=convidado.email,
+            base_url=str(request.base_url).rstrip('/')
+        )
 
         # Adiciona o convidado
         convidado_dict = convidado.dict()
@@ -116,113 +118,6 @@ async def adicionar_convidado(request: Request, evento_id: str, convidado: Convi
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
-
-@eventos_router.post("/{evento_id}/convidados/importar")
-async def importar_convidados(request: Request, evento_id: str, file: UploadFile = File(...)):
-    """Importa lista de convidados de um arquivo Excel"""
-    db = obter_db()
-    try:
-        # Verifica se o arquivo foi enviado
-        if not file:
-            raise HTTPException(status_code=400, detail="Nenhum arquivo enviado")
-
-        # Lê o conteúdo do arquivo
-        contents = await file.read()
-        
-        # Verifica se o conteúdo não está vazio
-        if not contents:
-            raise HTTPException(status_code=400, detail="Arquivo vazio")
-
-        # Usa BytesIO para processar o arquivo
-        try:
-            workbook = load_workbook(io.BytesIO(contents))
-        except Exception as excel_error:
-            print(f"Erro ao processar Excel: {excel_error}")
-            raise HTTPException(status_code=400, detail=f"Erro ao processar arquivo Excel: {str(excel_error)}")
-
-        worksheet = workbook.active
-
-        # Converte o ID do evento
-        try:
-            object_id = ObjectId(evento_id)
-        except Exception as id_error:
-            print(f"Erro ao converter ID do evento: {id_error}")
-            raise HTTPException(status_code=400, detail="ID de evento inválido")
-
-        # Busca o evento
-        evento = await db.eventos.find_one({"_id": object_id})
-        if not evento:
-            raise HTTPException(status_code=404, detail="Evento não encontrado")
-
-        base_url = str(request.base_url).rstrip('/')
-        convidados = []
-        erros_email = []
-
-        # Processar linhas do Excel
-        for row in worksheet.iter_rows(min_row=2, values_only=True):
-            # Pula linhas sem dados suficientes
-            if not row or len(row) < 2 or not row[0] or not row[1]:
-                continue
-
-            nome = str(row[0]).strip()
-            email = str(row[1]).strip()
-            telefone = str(row[2]).strip() if len(row) > 2 and row[2] else None
-
-            # Validações básicas
-            if not nome or not email:
-                print(f"Linha inválida: {row}")
-                continue
-
-            # Gera os links de confirmação
-            link_confirmacao = f"{base_url}/api/eventos/confirmar-presenca/{evento_id}/{email}/sim"
-            link_recusa = f"{base_url}/api/eventos/confirmar-presenca/{evento_id}/{email}/nao"
-
-            convidado = {
-                'nome': nome,
-                'email': email,
-                'telefone': telefone,
-                'status': StatusConvidado.PENDENTE
-            }
-            convidados.append(convidado)
-
-            # Tenta enviar o email
-            try:
-                await email_service.enviar_email_confirmacao(
-                    email=email,
-                    nome=nome,
-                    evento_nome=evento['nome'],
-                    evento_data=evento['data'],
-                    evento_hora=evento['hora'],
-                    evento_local=evento['local'],
-                    link_confirmacao=link_confirmacao,
-                    link_recusa=link_recusa
-                )
-            except Exception as email_error:
-                print(f"Erro ao enviar email para {email}: {str(email_error)}")
-                erros_email.append(email)
-
-        # Atualiza o evento com todos os convidados
-        if convidados:
-            await db.eventos.update_one(
-                {"_id": object_id},
-                {"$push": {"convidados": {"$each": convidados}}}
-            )
-
-        return {
-            "convidados": convidados,
-            "total_importados": len(convidados),
-            "erros_email": erros_email
-        }
-
-    except HTTPException:
-        # Re-raise HTTPExceptions para que sejam tratadas corretamente
-        raise
-    except Exception as e:
-        # Log detalhado do erro
-        import traceback
-        print(f"Erro não tratado na importação de convidados: {e}")
-        print(traceback.format_exc())
-        raise HTTPException(status_code=500, detail=f"Erro interno: {str(e)}")
 
 @eventos_router.get("/confirmar-presenca/{evento_id}/{convidado_email}/{resposta}")
 async def confirmar_presenca(
@@ -345,11 +240,13 @@ async def confirmar_convite(token: str, request: Request):
         
         convidados = evento.get('convidados', [])
         convidado_atualizado = False
+        convidado_info = None
         
         for convidado in convidados:
             if convidado.get('email') == email_convidado:
                 convidado['status'] = 'confirmado'
                 convidado_atualizado = True
+                convidado_info = convidado
                 break
         
         if convidado_atualizado:
@@ -358,10 +255,15 @@ async def confirmar_convite(token: str, request: Request):
                 {"$set": {"convidados": convidados}}
             )
             
+            # Adicione prints para depuração
+            print(f"Confirmação processada. Status: confirmado")
+            
             return templates.TemplateResponse("confirmacao_sucesso.html", {
                 "request": request, 
                 "evento": evento,
-                "status": "confirmado"  # Verifique se isso está correto
+                "status": "confirmado",  # Garanta que este valor está correto
+                "email": email_convidado,
+                "convidado": convidado_info
             })
         else:
             return templates.TemplateResponse("confirmacao_erro.html", {
@@ -375,12 +277,13 @@ async def confirmar_convite(token: str, request: Request):
             "mensagem": "Link de confirmação expirado."
         })
     except Exception as e:
+        print(f"Erro ao processar confirmação: {str(e)}")
         return templates.TemplateResponse("confirmacao_erro.html", {
             "request": request, 
-            "mensagem": "Erro ao processar confirmação."
+            "mensagem": f"Erro ao processar confirmação: {str(e)}"
         })
 
-# Faça o mesmo para o método de recusa (substituindo o status por 'recusado')
+
 @eventos_router.get("/recusar/{token}")
 async def recusar_convite(token: str, request: Request):
     try:
@@ -400,11 +303,13 @@ async def recusar_convite(token: str, request: Request):
         
         convidados = evento.get('convidados', [])
         convidado_atualizado = False
+        convidado_info = None
         
         for convidado in convidados:
             if convidado.get('email') == email_convidado:
                 convidado['status'] = 'recusado'
                 convidado_atualizado = True
+                convidado_info = convidado
                 break
         
         if convidado_atualizado:
@@ -413,10 +318,15 @@ async def recusar_convite(token: str, request: Request):
                 {"$set": {"convidados": convidados}}
             )
             
-            return templates.TemplateResponse("confirmacao_sucesso_simples.html", {
+            # Adicione prints para depuração
+            print(f"Recusa processada. Status: recusado")
+            
+            return templates.TemplateResponse("confirmacao_sucesso.html", {
                 "request": request, 
                 "evento": evento,
-                "status": "recusado"
+                "status": "recusado",  # Garanta que este valor está correto
+                "email": email_convidado,
+                "convidado": convidado_info
             })
         else:
             return templates.TemplateResponse("confirmacao_erro.html", {
@@ -430,9 +340,10 @@ async def recusar_convite(token: str, request: Request):
             "mensagem": "Link de confirmação expirado."
         })
     except Exception as e:
+        print(f"Erro ao processar recusa: {str(e)}")
         return templates.TemplateResponse("confirmacao_erro.html", {
             "request": request, 
-            "mensagem": "Erro ao processar confirmação."
+            "mensagem": f"Erro ao processar recusa: {str(e)}"
         })
 
 

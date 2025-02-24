@@ -1,4 +1,5 @@
 import smtplib
+import aiosmtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from jose import jwt
@@ -43,86 +44,141 @@ class EmailService:
         except Exception as e:
             print(f"Erro ao gerar token de confirmação: {e}")
             return None
-
+    
     @staticmethod
     async def enviar_email_confirmacao(
-        email: str, 
-        nome: str, 
-        evento_nome: str, 
-        evento_data: str, 
-        evento_hora: str, 
-        evento_local: str, 
-        link_confirmacao: str, 
-        link_recusa: str
+            email, nome, evento_nome, evento_data, evento_hora, evento_local,
+            link_confirmacao=None, link_recusa=None
     ):
         """
-        Envia email de confirmação
+        Função para enviar email de confirmação com links para confirmar ou recusar presença no evento.
         """
         try:
-            # Validar configurações de email
-            if not all([SMTP_SERVER, SMTP_PORT, SMTP_USERNAME, SMTP_PASSWORD]):
-                print("Configurações de email incompletas")
-                return False
-
-            # Crie a mensagem de email
-            msg = MIMEMultipart()
-            msg['From'] = SENDER_EMAIL
-            msg['To'] = email
-            msg['Subject'] = f"Convite para o evento: {evento_nome}"
+            # Usar as configurações do .env em vez de valores hardcoded
+            smtp_server = SMTP_SERVER
+            smtp_port = SMTP_PORT
+            smtp_username = SMTP_USERNAME
+            smtp_password = SMTP_PASSWORD
             
-            # Corpo do email em HTML
-            corpo_email = f"""
+            # Criar a mensagem de email
+            message = MIMEMultipart("alternative")
+            message["Subject"] = f"Convite para o evento: {evento_nome}"
+            message["From"] = SENDER_EMAIL or smtp_username
+            message["To"] = email
+            
+            # Texto do email
+            text = f"""
+            Olá {nome},
+            
+            Você foi convidado para o evento {evento_nome}.
+            
+            Data: {evento_data}
+            Hora: {evento_hora}
+            Local: {evento_local}
+            
+            Para confirmar sua presença, acesse o link:
+            {link_confirmacao}
+            
+            Para recusar o convite, acesse o link:
+            {link_recusa}
+            
+            Atenciosamente,
+            Equipe de Eventos
+            """
+            
+            # Versão HTML do email
+            html = f"""
             <html>
-            <body style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-                <div style="background-color: #f4f4f4; padding: 20px; text-align: center;">
-                    <h2>Convite para o Evento: {evento_nome}</h2>
+            <head>
+                <style>
+                    body {{ font-family: Arial, sans-serif; }}
+                    .container {{ max-width: 600px; margin: 0 auto; padding: 20px; }}
+                    .header {{ text-align: center; padding: 20px; }}
+                    .button {{ display: inline-block; padding: 10px 20px; margin: 10px; 
+                              text-decoration: none; border-radius: 5px; color: white; }}
+                    .confirm {{ background-color: #28a745; }}
+                    .decline {{ background-color: #dc3545; }}
+                    .details {{ background-color: #f9f9f9; padding: 15px; margin: 20px 0; }}
+                </style>
+            </head>
+            <body>
+                <div class="container">
+                    <div class="header">
+                        <h1>Convite para Evento</h1>
+                    </div>
                     
-                    <div style="background-color: white; padding: 20px; border-radius: 10px; margin: 20px 0;">
-                        <h3>Detalhes do Evento</h3>
-                        <p><strong>Nome:</strong> {evento_nome}</p>
+                    <p>Olá <strong>{nome}</strong>,</p>
+                    
+                    <p>Você foi convidado para o evento <strong>{evento_nome}</strong>.</p>
+                    
+                    <div class="details">
                         <p><strong>Data:</strong> {evento_data}</p>
                         <p><strong>Hora:</strong> {evento_hora}</p>
                         <p><strong>Local:</strong> {evento_local}</p>
                     </div>
                     
-                    <div style="margin: 20px 0;">
-                        <p>Olá {nome}, por favor, confirme sua participação:</p>
-                        <a href="{link_confirmacao}" style="background-color: #4CAF50; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px; margin-right: 10px;">
-                            Confirmar Presença
-                        </a>
-                        <a href="{link_recusa}" style="background-color: #f44336; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px;">
-                            Recusar Convite
-                        </a>
+                    <p>Por favor, confirme sua presença:</p>
+                    
+                    <div style="text-align: center;">
+                        <a href="{link_confirmacao}" class="button confirm">Confirmar Presença</a>
+                        <a href="{link_recusa}" class="button decline">Recusar Convite</a>
                     </div>
                     
-                    <p style="color: #888; font-size: 12px;">
-                        Este link expirará em 7 dias. Caso não consiga clicar, copie e cole no navegador.
-                    </p>
+                    <p>Atenciosamente,<br>Equipe de Eventos</p>
                 </div>
             </body>
             </html>
             """
             
-            # Anexe o corpo do email
-            msg.attach(MIMEText(corpo_email, 'html'))
+            # Anexar partes à mensagem
+            part1 = MIMEText(text, "plain")
+            part2 = MIMEText(html, "html")
+            message.attach(part1)
+            message.attach(part2)
             
-            # Envie o email
+            # Tentar com aiosmtplib primeiro (assíncrono)
             try:
-                with smtplib.SMTP(SMTP_SERVER, SMTP_PORT) as server:
+                async with aiosmtplib.SMTP(hostname=smtp_server, port=smtp_port) as server:
+                    await server.starttls()
+                    await server.login(smtp_username, smtp_password)
+                    await server.send_message(message)
+            except ImportError:
+                # Fallback para smtplib padrão se aiosmtplib não estiver disponível
+                with smtplib.SMTP(smtp_server, smtp_port) as server:
                     server.starttls()
-                    server.login(SMTP_USERNAME, SMTP_PASSWORD)
-                    server.send_message(msg)
-                
-                print(f"Email enviado com sucesso para {email}")
-                return True
+                    server.login(smtp_username, smtp_password)
+                    server.send_message(message)
             
-            except Exception as send_error:
-                print(f"Erro detalhado ao enviar email para {email}: {send_error}")
-                return False
-        
+            print(f"Email enviado com sucesso para {email}")
+            return True
+            
         except Exception as e:
-            print(f"Erro ao preparar email para {email}: {e}")
+            print(f"Erro ao enviar email para {email}: {str(e)}")
             return False
+            
+    @staticmethod
+    def gerar_tokens_para_evento(evento_id, email_convidado, base_url=None):
+        """
+        Gera tokens JWT e links completos para confirmação e recusa de presença
+        """
+        if base_url is None:
+            base_url = BASE_URL
+            
+        # Token para confirmar presença
+        token_confirmacao = EmailService.gerar_token_confirmacao(evento_id, email_convidado)
+        
+        # Token para recusar presença (mesma estrutura, mas vamos diferenciá-los na rota)
+        token_recusa = jwt.encode({
+            "evento_id": str(evento_id),
+            "email": email_convidado,
+            "exp": datetime.utcnow() + timedelta(days=7)
+        }, SECRET_KEY, algorithm="HS256")
+        
+        # Criar links completos
+        link_confirmacao = f"{base_url}/api/eventos/confirmar/{token_confirmacao}"
+        link_recusa = f"{base_url}/api/eventos/recusar/{token_recusa}"
+        
+        return link_confirmacao, link_recusa
 
 # Cria uma instância do serviço de email
 email_service = EmailService()

@@ -2,7 +2,7 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, RedirectResponse
 from routes.eventos import eventos_router
 from config.database import conectar_db, fechar_conexao
 import os
@@ -11,7 +11,7 @@ from services.email_service import email_service
 from routes.auth import router as auth_router
 from fastapi.security import OAuth2PasswordBearer
 
-# Inicializa o FastAPI
+# Inicializa o FastAPI (APENAS UMA VEZ)
 app = FastAPI(
     title="Sistema RSVP",
     description="Sistema para gerenciamento de eventos e confirmações de presença",
@@ -20,46 +20,33 @@ app = FastAPI(
     redoc_url="/api/redoc"
 )
 
-# Obtém o diretório base do projeto
+# Obtém o diretório base do projeto (APENAS UMA VEZ)
 BASE_DIR = Path(__file__).resolve().parent
 
-# Configuração dos templates
+# Configuração dos templates (APENAS UMA VEZ)
 templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
 
 # Adiciona o router de autenticação
 app.include_router(auth_router)
 
-# Inicializa o FastAPI
-app = FastAPI(
-    title="Sistema RSVP",
-    description="Sistema para gerenciamento de eventos e confirmações de presença",
-    version="1.0.0",
-    docs_url="/api/docs",  # Altera a URL da documentação
-    redoc_url="/api/redoc"  # Altera a URL do ReDoc
-)
-
-# Obtém o diretório base do projeto
-BASE_DIR = Path(__file__).resolve().parent
-
-# Configuração dos templates
-templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
-
 # Configuração do CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:8000",
-        "http://127.0.0.1:8000",
-        "*"  # Em produção, especifique os domínios permitidos
-    ],
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"]
 )
 
+# Rota raiz redireciona para login
+@app.get("/")
+async def root(request: Request):
+    return RedirectResponse(url="/login")
+
 @app.get("/login")
 async def login_page(request: Request):
     return templates.TemplateResponse("login.html", {"request": request})
+
 
 # Inclui as rotas de eventos
 app.include_router(

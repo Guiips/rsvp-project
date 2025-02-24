@@ -283,6 +283,49 @@ async def confirmar_presenca(
             "mensagem": "Erro ao processar confirmação."
         })
 
+
+@eventos_router.post("/{evento_id}/convidados/enviar-email")
+async def enviar_email_convidado(
+    request: Request,
+    evento_id: str,
+    dados: dict = Body(...)
+):
+    """Envia email de confirmação para um convidado específico"""
+    try:
+        db = obter_db()
+        object_id = ObjectId(evento_id)
+        evento = await db.eventos.find_one({"_id": object_id})
+        
+        if not evento:
+            raise HTTPException(status_code=404, detail="Evento não encontrado")
+        
+        # Gera os links de confirmação
+        base_url = str(request.base_url).rstrip('/')
+        link_confirmacao = f"{base_url}/api/eventos/confirmar-presenca/{evento_id}/{dados['email']}/sim"
+        link_recusa = f"{base_url}/api/eventos/confirmar-presenca/{evento_id}/{dados['email']}/nao"
+        
+        # Envia o email
+        resultado = await email_service.enviar_email_confirmacao(
+            email=dados['email'],
+            nome=dados['nome'],
+            evento_nome=evento['nome'],
+            evento_data=evento['data'],
+            evento_hora=evento['hora'],
+            evento_local=evento['local'],
+            link_confirmacao=link_confirmacao,
+            link_recusa=link_recusa
+        )
+        
+        if resultado:
+            return {"mensagem": "Email enviado com sucesso"}
+        else:
+            raise HTTPException(status_code=500, detail="Falha ao enviar email")
+        
+    except Exception as e:
+        print(f"Erro ao enviar email individual: {e}")
+        raise HTTPException(status_code=500, detail=f"Erro ao enviar email: {str(e)}")
+
+
 @eventos_router.get("/confirmar/{token}")
 async def confirmar_convite(token: str, request: Request):
     try:

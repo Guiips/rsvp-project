@@ -117,6 +117,85 @@ async def adicionar_convidado(request: Request, evento_id: str, convidado: Convi
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+@eventos_router.post("/{evento_id}/convidados/importar")
+async def importar_convidados(request: Request, evento_id: str, file: UploadFile = File(...)):
+    """Importa lista de convidados de um arquivo Excel"""
+    db = obter_db()
+    try:
+        # Limita o tamanho do arquivo (por exemplo, 10MB)
+        file_size = await file.size()
+        if file_size > 10_000_000:  # 10MB
+            raise HTTPException(status_code=413, detail="Arquivo muito grande")
+
+        object_id = ObjectId(evento_id)
+        evento = await db.eventos.find_one({"_id": object_id})
+        if not evento:
+            raise HTTPException(status_code=404, detail="Evento não encontrado")
+
+        # Lê o conteúdo do arquivo
+        contents = await file.read()
+        
+        # Usa BytesIO para processar o arquivo
+        workbook = load_workbook(io.BytesIO(contents))
+        worksheet = workbook.active
+
+        base_url = str(request.base_url).rstrip('/')
+        convidados = []
+        erros_email = []
+
+        for row in worksheet.iter_rows(min_row=2, values_only=True):
+            if not row[0] or not row[1]:  # Pula linhas sem nome ou email
+                continue
+
+            nome = str(row[0])
+            email = str(row[1])
+            telefone = str(row[2]) if len(row) > 2 and row[2] else None
+
+            # Gera os links de confirmação
+            link_confirmacao = f"{base_url}/api/eventos/confirmar-presenca/{evento_id}/{email}/sim"
+            link_recusa = f"{base_url}/api/eventos/confirmar-presenca/{evento_id}/{email}/nao"
+
+            convidado = {
+                'nome': nome,
+                'email': email,
+                'telefone': telefone,
+                'status': StatusConvidado.PENDENTE
+            }
+            convidados.append(convidado)
+
+            # Tenta enviar o email
+            try:
+                await email_service.enviar_email_confirmacao(
+                    email=email,
+                    nome=nome,
+                    evento_nome=evento['nome'],
+                    evento_data=evento['data'],
+                    evento_hora=evento['hora'],
+                    evento_local=evento['local'],
+                    link_confirmacao=link_confirmacao,
+                    link_recusa=link_recusa
+                )
+            except Exception as email_error:
+                erros_email.append(email)
+                print(f"Erro ao enviar email para {email}: {str(email_error)}")
+
+        # Atualiza o evento com todos os convidados
+        if convidados:
+            await db.eventos.update_one(
+                {"_id": object_id},
+                {"$push": {"convidados": {"$each": convidados}}}
+            )
+
+        return {
+            "convidados": convidados,
+            "total_importados": len(convidados),
+            "erros_email": erros_email
+        }
+
+    except Exception as e:
+        print(f"Erro na importação de convidados: {e}")
+        raise HTTPException(status_code=500, detail=f"Erro na importação: {str(e)}")
+
 @eventos_router.get("/confirmar-presenca/{evento_id}/{convidado_email}/{resposta}")
 async def confirmar_presenca(
     request: Request,

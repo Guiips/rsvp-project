@@ -122,34 +122,56 @@ async def importar_convidados(request: Request, evento_id: str, file: UploadFile
     """Importa lista de convidados de um arquivo Excel"""
     db = obter_db()
     try:
-        # Limita o tamanho do arquivo (por exemplo, 10MB)
-        file_size = await file.size()
-        if file_size > 10_000_000:  # 10MB
-            raise HTTPException(status_code=413, detail="Arquivo muito grande")
-
-        object_id = ObjectId(evento_id)
-        evento = await db.eventos.find_one({"_id": object_id})
-        if not evento:
-            raise HTTPException(status_code=404, detail="Evento não encontrado")
+        # Verifica se o arquivo foi enviado
+        if not file:
+            raise HTTPException(status_code=400, detail="Nenhum arquivo enviado")
 
         # Lê o conteúdo do arquivo
         contents = await file.read()
         
+        # Verifica se o conteúdo não está vazio
+        if not contents:
+            raise HTTPException(status_code=400, detail="Arquivo vazio")
+
         # Usa BytesIO para processar o arquivo
-        workbook = load_workbook(io.BytesIO(contents))
+        try:
+            workbook = load_workbook(io.BytesIO(contents))
+        except Exception as excel_error:
+            print(f"Erro ao processar Excel: {excel_error}")
+            raise HTTPException(status_code=400, detail=f"Erro ao processar arquivo Excel: {str(excel_error)}")
+
         worksheet = workbook.active
+
+        # Converte o ID do evento
+        try:
+            object_id = ObjectId(evento_id)
+        except Exception as id_error:
+            print(f"Erro ao converter ID do evento: {id_error}")
+            raise HTTPException(status_code=400, detail="ID de evento inválido")
+
+        # Busca o evento
+        evento = await db.eventos.find_one({"_id": object_id})
+        if not evento:
+            raise HTTPException(status_code=404, detail="Evento não encontrado")
 
         base_url = str(request.base_url).rstrip('/')
         convidados = []
         erros_email = []
 
+        # Processar linhas do Excel
         for row in worksheet.iter_rows(min_row=2, values_only=True):
-            if not row[0] or not row[1]:  # Pula linhas sem nome ou email
+            # Pula linhas sem dados suficientes
+            if not row or len(row) < 2 or not row[0] or not row[1]:
                 continue
 
-            nome = str(row[0])
-            email = str(row[1])
-            telefone = str(row[2]) if len(row) > 2 and row[2] else None
+            nome = str(row[0]).strip()
+            email = str(row[1]).strip()
+            telefone = str(row[2]).strip() if len(row) > 2 and row[2] else None
+
+            # Validações básicas
+            if not nome or not email:
+                print(f"Linha inválida: {row}")
+                continue
 
             # Gera os links de confirmação
             link_confirmacao = f"{base_url}/api/eventos/confirmar-presenca/{evento_id}/{email}/sim"
@@ -176,8 +198,8 @@ async def importar_convidados(request: Request, evento_id: str, file: UploadFile
                     link_recusa=link_recusa
                 )
             except Exception as email_error:
-                erros_email.append(email)
                 print(f"Erro ao enviar email para {email}: {str(email_error)}")
+                erros_email.append(email)
 
         # Atualiza o evento com todos os convidados
         if convidados:
@@ -192,9 +214,15 @@ async def importar_convidados(request: Request, evento_id: str, file: UploadFile
             "erros_email": erros_email
         }
 
+    except HTTPException:
+        # Re-raise HTTPExceptions para que sejam tratadas corretamente
+        raise
     except Exception as e:
-        print(f"Erro na importação de convidados: {e}")
-        raise HTTPException(status_code=500, detail=f"Erro na importação: {str(e)}")
+        # Log detalhado do erro
+        import traceback
+        print(f"Erro não tratado na importação de convidados: {e}")
+        print(traceback.format_exc())
+        raise HTTPException(status_code=500, detail=f"Erro interno: {str(e)}")
 
 @eventos_router.get("/confirmar-presenca/{evento_id}/{convidado_email}/{resposta}")
 async def confirmar_presenca(

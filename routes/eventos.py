@@ -330,40 +330,36 @@ async def enviar_email_convidado(
 async def confirmar_convite(token: str, request: Request):
     try:
         db = obter_db()
-        # Decodificar o token para encontrar o evento e o convidado
         decoded_token = jwt.decode(token, SECRET_KEY, algorithms=["HS256"])
         
         evento_id = decoded_token.get('evento_id')
         email_convidado = decoded_token.get('email')
         
-        # Buscar o evento
         evento = await db.eventos.find_one({"_id": ObjectId(evento_id)})
         
         if not evento:
+            # Mensagem de erro simples
             return templates.TemplateResponse("confirmacao_erro.html", {
                 "request": request, 
                 "mensagem": "Evento não encontrado."
             })
         
-        # Encontrar o convidado no evento
         convidados = evento.get('convidados', [])
         convidado_atualizado = False
         
         for convidado in convidados:
             if convidado.get('email') == email_convidado:
-                # Atualizar o status do convidado
                 convidado['status'] = 'confirmado'
                 convidado_atualizado = True
                 break
         
         if convidado_atualizado:
-            # Atualizar o evento no banco de dados
             await db.eventos.update_one(
                 {"_id": ObjectId(evento_id)},
                 {"$set": {"convidados": convidados}}
             )
             
-            return templates.TemplateResponse("confirmacao_sucesso.html", {
+            return templates.TemplateResponse("confirmacao_sucesso_simples.html", {
                 "request": request, 
                 "evento": evento,
                 "status": "confirmado"
@@ -385,17 +381,16 @@ async def confirmar_convite(token: str, request: Request):
             "mensagem": "Erro ao processar confirmação."
         })
 
+# Faça o mesmo para o método de recusa (substituindo o status por 'recusado')
 @eventos_router.get("/recusar/{token}")
 async def recusar_convite(token: str, request: Request):
     try:
         db = obter_db()
-        # Decodificar o token para encontrar o evento e o convidado
         decoded_token = jwt.decode(token, SECRET_KEY, algorithms=["HS256"])
         
         evento_id = decoded_token.get('evento_id')
         email_convidado = decoded_token.get('email')
         
-        # Buscar o evento
         evento = await db.eventos.find_one({"_id": ObjectId(evento_id)})
         
         if not evento:
@@ -404,25 +399,22 @@ async def recusar_convite(token: str, request: Request):
                 "mensagem": "Evento não encontrado."
             })
         
-        # Encontrar o convidado no evento
         convidados = evento.get('convidados', [])
         convidado_atualizado = False
         
         for convidado in convidados:
             if convidado.get('email') == email_convidado:
-                # Atualizar o status do convidado
                 convidado['status'] = 'recusado'
                 convidado_atualizado = True
                 break
         
         if convidado_atualizado:
-            # Atualizar o evento no banco de dados
             await db.eventos.update_one(
                 {"_id": ObjectId(evento_id)},
                 {"$set": {"convidados": convidados}}
             )
             
-            return templates.TemplateResponse("confirmacao_sucesso.html", {
+            return templates.TemplateResponse("confirmacao_sucesso_simples.html", {
                 "request": request, 
                 "evento": evento,
                 "status": "recusado"
@@ -443,6 +435,32 @@ async def recusar_convite(token: str, request: Request):
             "request": request, 
             "mensagem": "Erro ao processar confirmação."
         })
+
+
+@eventos_router.delete("/{evento_id}/convidados/excluir")
+async def excluir_convidado(
+    evento_id: str, 
+    dados: dict = Body(...)
+):
+    """Exclui um convidado específico de um evento"""
+    db = obter_db()
+    try:
+        object_id = ObjectId(evento_id)
+        
+        # Remove o convidado pelo email
+        resultado = await db.eventos.update_one(
+            {"_id": object_id},
+            {"$pull": {"convidados": {"email": dados['email']}}}
+        )
+        
+        if resultado.modified_count == 0:
+            raise HTTPException(status_code=404, detail="Convidado não encontrado")
+        
+        return {"mensagem": "Convidado excluído com sucesso"}
+    
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
 
 @eventos_router.patch("/{evento_id}")
 async def atualizar_evento(evento_id: str, evento_update: EventoUpdate):

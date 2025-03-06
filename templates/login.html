@@ -1,154 +1,113 @@
-<!DOCTYPE html>
-<html>
-<head>
-   <title>Login</title>
-   <style>
-       body {
-           font-family: Arial, sans-serif;
-           display: flex;
-           justify-content: center;
-           align-items: center;
-           height: 100vh;
-           margin: 0;
-           background-color: #f5f5f5;
-       }
-       .login-container {
-           background: white;
-           padding: 2rem;
-           border-radius: 8px;
-           box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
-           width: 100%;
-           max-width: 400px;
-       }
-       .form-group {
-           margin-bottom: 1rem;
-       }
-       label {
-           display: block;
-           margin-bottom: 0.5rem;
-           font-weight: 500;
-       }
-       input {
-           width: 100%;
-           padding: 0.75rem;
-           border: 1px solid #ddd;
-           border-radius: 4px;
-           font-size: 1rem;
-       }
-       input:focus {
-           outline: none;
-           border-color: #007bff;
-           box-shadow: 0 0 0 2px rgba(0,123,255,0.25);
-       }
-       button {
-           width: 100%;
-           padding: 0.75rem;
-           background-color: #007bff;
-           color: white;
-           border: none;
-           border-radius: 4px;
-           cursor: pointer;
-           font-size: 1rem;
-           font-weight: 500;
-           transition: background-color 0.2s;
-       }
-       button:hover {
-           background-color: #0056b3;
-       }
-       button:disabled {
-           background-color: #ccc;
-           cursor: not-allowed;
-       }
-       .error {
-           color: #dc3545;
-           margin-top: 1rem;
-           padding: 0.5rem;
-           border-radius: 4px;
-           background-color: rgba(220,53,69,0.1);
-           text-align: center;
-           display: none;
-       }
-       .logo {
-           text-align: center;
-           margin-bottom: 2rem;
-       }
-       .logo h1 {
-           color: #007bff;
-           margin: 0;
-       }
-   </style>
-</head>
-<body>
-   <div class="login-container">
-       <div class="logo">
-           <h1>RSVP</h1>
-           <p>Sistema de Gerenciamento de Eventos</p>
-       </div>
-       <form id="loginForm">
-           <div class="form-group">
-               <label for="username">Usuário:</label>
-               <input type="text" id="username" name="username" required autocomplete="username">
-           </div>
-           <div class="form-group">
-               <label for="password">Senha:</label>
-               <input type="password" id="password" name="password" required autocomplete="current-password">
-           </div>
-           <button type="submit" id="submitButton">Entrar</button>
-           <div id="error" class="error"></div>
-       </form>
-   </div>
+{% extends 'base.html' %}
 
-   <script>
-       const form = document.getElementById('loginForm');
-       const submitButton = document.getElementById('submitButton');
-       const errorDiv = document.getElementById('error');
+{% block title %}Login{% endblock %}
 
-       form.addEventListener('submit', async (e) => {
-           e.preventDefault();
-           submitButton.disabled = true;
-           submitButton.textContent = 'Entrando...';
-           errorDiv.style.display = 'none';
-           
-           const formData = new FormData();
-           formData.append('username', document.getElementById('username').value);
-           formData.append('password', document.getElementById('password').value);
-           
-           try {
-               const response = await fetch('/token', {
-                   method: 'POST',
-                   body: formData
-               });
-               
-               const data = await response.json();
-               
-               if (response.ok) {
-                   localStorage.setItem('token', data.access_token);
-                   localStorage.setItem('user_type', data.is_admin ? 'admin' : 'user');
-                   
-                   // Redireciona para a página correta baseado no tipo de usuário
-                   window.location.href = '/eventos';
-               } else {
-                   errorDiv.textContent = 'Usuário ou senha incorretos';
-                   errorDiv.style.display = 'block';
-               }
-           } catch (error) {
-               console.error('Erro:', error);
-               errorDiv.textContent = 'Erro ao fazer login. Tente novamente.';
-               errorDiv.style.display = 'block';
-           } finally {
-               submitButton.disabled = false;
-               submitButton.textContent = 'Entrar';
-           }
-       });
+{% block content %}
+<div class="container mt-5">
+    <div class="row justify-content-center">
+        <div class="col-md-6">
+            <div class="card shadow">
+                <div class="card-header bg-primary text-white">
+                    <h4 class="mb-0">Login do Sistema RSVP</h4>
+                </div>
+                <div class="card-body">
+                    <div id="alertPlaceholder"></div>
+                    
+                    <form id="loginForm" method="post" autocomplete="on">
+                        <div class="mb-3">
+                            <label for="username" class="form-label">Usuário</label>
+                            <input type="text" class="form-control" id="username" name="username" autocomplete="username" required>
+                            <div class="form-text text-muted">Use "admin" ou "code.events"</div>
+                        </div>
+                        <div class="mb-3">
+                            <label for="password" class="form-label">Senha</label>
+                            <input type="password" class="form-control" id="password" name="password" autocomplete="current-password" required>
+                            <div class="form-text text-muted">Senha padrão: admin123 ou code123</div>
+                        </div>
+                        <div class="d-grid">
+                            <button type="submit" class="btn btn-primary">Entrar</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
 
-       // Limpa mensagens de erro quando o usuário começa a digitar
-       document.getElementById('username').addEventListener('input', () => {
-           errorDiv.style.display = 'none';
-       });
-       
-       document.getElementById('password').addEventListener('input', () => {
-           errorDiv.style.display = 'none';
-       });
-   </script>
-</body>
-</html>
+{% block extra_js %}
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        document.getElementById('loginForm').addEventListener('submit', async function(e) {
+            e.preventDefault();
+            console.log("Formulário submetido");
+            
+            // Mostra um indicador de carregamento
+            showLoading();
+            
+            const username = document.getElementById('username').value;
+            const password = document.getElementById('password').value;
+            
+            try {
+                // Usar URLSearchParams para enviar como formulário
+                const formData = new URLSearchParams();
+                formData.append('username', username);
+                formData.append('password', password);
+                
+                const response = await fetch('/api/auth/login', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/x-www-form-urlencoded',
+                    },
+                    body: formData
+                });
+                
+                console.log("Status da resposta:", response.status);
+                
+                const data = await response.json();
+                console.log("Dados da resposta:", data);
+                
+                hideLoading();
+                
+                if (data.success) {
+                    console.log("Login bem-sucedido. Token:", data.access_token);
+                    localStorage.setItem('access_token', data.access_token);
+                    localStorage.setItem('user_role', data.role);
+                    
+                    // Define o token como cookie também
+                    document.cookie = `access_token=${data.access_token}; path=/; max-age=1800`;
+                    
+                    // Redirect baseado no papel do usuário
+                    if (data.role === 'admin') {
+                        window.location.href = '/eventos';
+                    } else if (data.role === 'reporter') {
+                        window.location.href = '/relatorios';
+                    } else {
+                        window.location.href = '/eventos';
+                    }
+                } else {
+                    showAlert(data.message || 'Nome de usuário ou senha incorretos', 'danger');
+                }
+            } catch (error) {
+                hideLoading();
+                console.error('Erro durante o login:', error);
+                showAlert('Erro ao tentar fazer login. Tente novamente.', 'danger');
+            }
+        });
+    });
+    
+    // Função para mostrar alertas
+    function showAlert(message, type) {
+        const alertPlaceholder = document.getElementById('alertPlaceholder');
+        const wrapper = document.createElement('div');
+        wrapper.innerHTML = `
+            <div class="alert alert-${type} alert-dismissible fade show" role="alert">
+                ${message}
+                <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+            </div>
+        `;
+        alertPlaceholder.innerHTML = '';
+        alertPlaceholder.append(wrapper);
+    }
+</script>
+{% endblock %}

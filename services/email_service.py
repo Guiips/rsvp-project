@@ -6,7 +6,7 @@ from jose import jwt
 from datetime import datetime, timedelta
 import os
 from dotenv import load_dotenv
-from config.secrets import SECRET_KEY  # Importar de config.secrets para evitar importação circular
+from config.secrets import SECRET_KEY
 
 # Carregar variáveis de ambiente
 load_dotenv()
@@ -26,11 +26,6 @@ class EmailService:
     def gerar_token_confirmacao(evento_id, email_convidado, acao='confirmar'):
         """
         Gera um token JWT para confirmação ou recusa de convite
-        
-        Args:
-            evento_id: ID do evento
-            email_convidado: Email do convidado
-            acao: 'confirmar' ou 'recusar'
         """
         try:
             # Token expira em 7 dias
@@ -59,13 +54,12 @@ class EmailService:
         Função para enviar email de confirmação com links para confirmar ou recusar presença no evento.
         """
         try:
-            # Usar as configurações do .env em vez de valores hardcoded
+            # Usar as configurações do .env
             smtp_server = SMTP_SERVER
             smtp_port = SMTP_PORT
             smtp_username = SMTP_USERNAME
             smtp_password = SMTP_PASSWORD
             
-            # Debug
             print(f"Enviando email para {email} usando servidor {smtp_server}:{smtp_port}")
             
             # Criar a mensagem de email
@@ -90,6 +84,11 @@ class EmailService:
             Para recusar o convite, acesse o link:
             {link_recusa}
             
+            Após confirmar ou recusar sua presença, você poderá adicionar observações importantes como:
+            - Restrições alimentares
+            - Necessidades especiais
+            - Outras informações relevantes
+            
             Atenciosamente,
             Equipe de Eventos
             """
@@ -99,20 +98,95 @@ class EmailService:
             <html>
             <head>
                 <style>
-                    body {{ font-family: Arial, sans-serif; }}
-                    .container {{ max-width: 600px; margin: 0 auto; padding: 20px; }}
-                    .header {{ text-align: center; padding: 20px; }}
-                    .button {{ display: inline-block; padding: 10px 20px; margin: 10px; 
-                              text-decoration: none; border-radius: 5px; color: white; }}
-                    .confirm {{ background-color: #28a745; }}
-                    .decline {{ background-color: #dc3545; }}
-                    .details {{ background-color: #f9f9f9; padding: 15px; margin: 20px 0; }}
+                    body {{ 
+                        font-family: 'Segoe UI', Arial, sans-serif;
+                        line-height: 1.6;
+                        color: #333;
+                        margin: 0;
+                        padding: 0;
+                    }}
+                    .container {{ 
+                        max-width: 600px;
+                        margin: 0 auto;
+                        padding: 20px;
+                    }}
+                    .header {{ 
+                        text-align: center;
+                        padding: 20px;
+                        background-color: #f8f9fa;
+                        border-radius: 8px;
+                        margin-bottom: 20px;
+                    }}
+                    .event-title {{
+                        color: #1a73e8;
+                        font-size: 24px;
+                        margin-bottom: 10px;
+                    }}
+                    .details {{ 
+                        background-color: #f8f9fa;
+                        padding: 20px;
+                        border-radius: 8px;
+                        margin: 20px 0;
+                    }}
+                    .button-container {{
+                        text-align: center;
+                        margin: 25px 0;
+                    }}
+                    .button {{ 
+                        display: inline-block;
+                        padding: 12px 24px;
+                        margin: 10px;
+                        text-decoration: none;
+                        border-radius: 50px;
+                        font-weight: 500;
+                        transition: all 0.3s ease;
+                    }}
+                    .confirm {{ 
+                        background-color: #28a745;
+                        color: white;
+                    }}
+                    .confirm:hover {{
+                        background-color: #218838;
+                    }}
+                    .decline {{ 
+                        background-color: #dc3545;
+                        color: white;
+                    }}
+                    .decline:hover {{
+                        background-color: #c82333;
+                    }}
+                    .obs-section {{
+                        background-color: #e8f5e9;
+                        padding: 20px;
+                        border-radius: 8px;
+                        margin-top: 20px;
+                    }}
+                    .obs-title {{
+                        color: #2e7d32;
+                        font-size: 18px;
+                        margin-bottom: 10px;
+                    }}
+                    .obs-list {{
+                        margin: 10px 0;
+                        padding-left: 20px;
+                    }}
+                    .obs-list li {{
+                        margin: 5px 0;
+                        color: #1b5e20;
+                    }}
+                    .footer {{
+                        text-align: center;
+                        margin-top: 30px;
+                        padding-top: 20px;
+                        border-top: 1px solid #eee;
+                        color: #666;
+                    }}
                 </style>
             </head>
             <body>
                 <div class="container">
                     <div class="header">
-                        <h1>Convite para Evento</h1>
+                        <h1 class="event-title">Convite para Evento</h1>
                     </div>
                     
                     <p>Olá <strong>{nome}</strong>,</p>
@@ -125,14 +199,24 @@ class EmailService:
                         <p><strong>Local:</strong> {evento_local}</p>
                     </div>
                     
-                    <p>Por favor, confirme sua presença:</p>
-                    
-                    <div style="text-align: center;">
+                    <div class="button-container">
                         <a href="{link_confirmacao}" class="button confirm">Confirmar Presença</a>
                         <a href="{link_recusa}" class="button decline">Recusar Convite</a>
                     </div>
+
+                    <div class="obs-section">
+                        <h2 class="obs-title">Informações Adicionais</h2>
+                        <p>Após confirmar ou recusar sua presença, você poderá adicionar observações importantes como:</p>
+                        <ul class="obs-list">
+                            <li>Restrições alimentares</li>
+                            <li>Necessidades especiais</li>
+                            <li>Outras informações relevantes</li>
+                        </ul>
+                    </div>
                     
-                    <p>Atenciosamente,<br>Equipe de Eventos</p>
+                    <div class="footer">
+                        <p>Atenciosamente,<br>Equipe de Eventos</p>
+                    </div>
                 </div>
             </body>
             </html>
@@ -144,7 +228,7 @@ class EmailService:
             message.attach(part1)
             message.attach(part2)
             
-            # Tentar com o smtplib padrão
+            # Tentar enviar o email primeiro com smtplib
             try:
                 with smtplib.SMTP(smtp_server, smtp_port) as server:
                     # Inicie TLS apenas se a porta for 587 ou 25
@@ -158,7 +242,6 @@ class EmailService:
                 print(f"Erro ao enviar email com smtplib: {str(smtp_error)}")
                 # Tentar com aiosmtplib como fallback
                 try:
-                    # Use SSL diretamente se a porta for 465, caso contrário use starttls
                     if smtp_port == 465:
                         async with aiosmtplib.SMTP(hostname=smtp_server, port=smtp_port, use_tls=True) as server:
                             await server.login(smtp_username, smtp_password)
@@ -173,6 +256,7 @@ class EmailService:
                 except Exception as async_error:
                     print(f"Erro ao enviar email com aiosmtplib: {str(async_error)}")
                     raise
+                    
         except Exception as e:
             print(f"Erro ao enviar email para {email}: {str(e)}")
             return False
@@ -191,7 +275,6 @@ class EmailService:
         # Token para recusar presença
         token_recusa = EmailService.gerar_token_confirmacao(evento_id, email_convidado, acao='recusar')
         
-        # Debug
         print(f"Link confirmação base: {base_url}/api/eventos/confirmar/")
         print(f"Link recusa base: {base_url}/api/eventos/recusar/")
         

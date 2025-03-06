@@ -1,54 +1,156 @@
-<!-- templates/eventos/detalhes.html -->
 {% extends "base.html" %}
 
 {% block title %}Detalhes do Evento{% endblock %}
 
 {% block content %}
 <div class="card">
-    <div class="card-header">
+    <div class="card-header d-flex justify-content-between align-items-center">
         <h2 id="nomeEvento"></h2>
+        <div class="dropdown">
+            <button class="btn btn-primary dropdown-toggle" type="button" id="dropdownRelatorio" data-bs-toggle="dropdown" aria-expanded="false">
+                <i class="bi bi-download"></i> Baixar Relatório
+            </button>
+            <ul class="dropdown-menu" aria-labelledby="dropdownRelatorio">
+                <li>
+                    <button class="dropdown-item" onclick="baixarRelatorioCSV()">
+                        <i class="bi bi-filetype-csv"></i> Baixar CSV
+                    </button>
+                </li>
+                <li>
+                    <button class="dropdown-item" onclick="baixarRelatorioExcel()">
+                        <i class="bi bi-file-earmark-excel"></i> Baixar Excel
+                    </button>
+                </li>
+            </ul>
+        </div>
     </div>
+    
     <div class="card-body">
+        <!-- Informações do Evento -->
+        <div class="event-details mb-4">
+            <div class="row">
+                <div class="col-md-6">
+                    <p><strong><i class="bi bi-person"></i> Responsável:</strong> <span id="responsavel"></span></p>
+                    <p><strong><i class="bi bi-calendar"></i> Data:</strong> <span id="data"></span></p>
+                    <p><strong><i class="bi bi-clock"></i> Hora:</strong> <span id="hora"></span></p>
+                </div>
+                <div class="col-md-6">
+                    <p><strong><i class="bi bi-geo-alt"></i> Local:</strong> <span id="local"></span></p>
+                    <p><strong><i class="bi bi-tag"></i> Categoria:</strong> <span id="categoria"></span></p>
+                    <p><strong><i class="bi bi-info-circle"></i> Descrição:</strong></p>
+                    <p id="descricao" class="text-muted"></p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Cards de Estatísticas -->
         <div class="row mb-4">
-            <div class="col-md-6">
-                <p><strong>Responsável:</strong> <span id="responsavel"></span></p>
-                <p><strong>Data:</strong> <span id="data"></span></p>
-                <p><strong>Hora:</strong> <span id="hora"></span></p>
-                <p><strong>Local:</strong> <span id="local"></span></p>
-                <p><strong>Categoria:</strong> <span id="categoria"></span></p>
+            <div class="col-md-3">
+                <div class="card stat-card h-100">
+                    <div class="card-body text-center">
+                        <div class="stat-icon bg-primary">
+                            <i class="bi bi-people"></i>
+                        </div>
+                        <h3 id="totalConvidados" class="stat-number">0</h3>
+                        <p class="stat-label mb-0">Total de Convidados</p>
+                    </div>
+                </div>
             </div>
-            <div class="col-md-6">
-                <p><strong>Descrição:</strong></p>
-                <p id="descricao"></p>
+            <div class="col-md-3">
+                <div class="card stat-card h-100">
+                    <div class="card-body text-center">
+                        <div class="stat-icon bg-success">
+                            <i class="bi bi-check-circle"></i>
+                        </div>
+                        <h3 id="totalConfirmados" class="stat-number">0</h3>
+                        <p class="stat-label mb-0">Confirmados</p>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card stat-card h-100">
+                    <div class="card-body text-center">
+                        <div class="stat-icon bg-danger">
+                            <i class="bi bi-x-circle"></i>
+                        </div>
+                        <h3 id="totalRecusados" class="stat-number">0</h3>
+                        <p class="stat-label mb-0">Recusados</p>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card stat-card h-100">
+                    <div class="card-body text-center">
+                        <div class="stat-icon bg-warning">
+                            <i class="bi bi-clock"></i>
+                        </div>
+                        <h3 id="totalPendentes" class="stat-number">0</h3>
+                        <p class="stat-label mb-0">Pendentes</p>
+                    </div>
+                </div>
             </div>
         </div>
 
-        <h3>Convidados</h3>
-        <div class="mb-3">
-            <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#addConvidadoModal">
-                <i class="bi bi-person-plus"></i> Adicionar Convidado
-            </button>
-            <button class="btn btn-secondary" data-bs-toggle="modal" data-bs-target="#importarConvidadosModal">
-                <i class="bi bi-file-earmark-excel"></i> Importar Lista
-            </button>
-            <button class="btn btn-success" id="enviarEmails">
-                <i class="bi bi-envelope"></i> Enviar E-mails
-            </button>
-        </div>
+        <!-- Seção de Convidados -->
+        <div class="guest-list">
+            <div class="d-flex justify-content-between align-items-center mb-3">
+                <h3>Lista de Convidados</h3>
+                <div class="btn-group">
+                    <button class="btn btn-primary me-2" data-bs-toggle="modal" data-bs-target="#addConvidadoModal">
+                        <i class="bi bi-person-plus"></i> Adicionar Convidado
+                    </button>
+                    <button class="btn btn-secondary me-2" data-bs-toggle="modal" data-bs-target="#importarConvidadosModal">
+                        <i class="bi bi-file-earmark-excel"></i> Importar Lista
+                    </button>
+                    <button class="btn btn-success" id="enviarEmails">
+                        <i class="bi bi-envelope"></i> Enviar E-mails
+                    </button>
+                </div>
+            </div>
 
-        <div class="table-responsive">
-            <table class="table table-striped">
-                <thead>
-                    <tr>
-                        <th>Nome</th>
-                        <th>Email</th>
-                        <th>Telefone</th>
-                        <th>Status</th>
-                        <th>Ações</th>
-                    </tr>
-                </thead>
-                <tbody id="listaConvidados"></tbody>
-            </table>
+            <!-- Filtros -->
+            <div class="row mb-3">
+                <div class="col-md-4">
+                    <div class="input-group">
+                        <span class="input-group-text"><i class="bi bi-search"></i></span>
+                        <input type="text" class="form-control" id="pesquisaConvidado" placeholder="Pesquisar convidado...">
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <select class="form-select" id="filtroStatus">
+                        <option value="">Todos os status</option>
+                        <option value="confirmado">Confirmados</option>
+                        <option value="recusado">Recusados</option>
+                        <option value="pendente">Pendentes</option>
+                    </select>
+                </div>
+                <div class="col-md-3">
+                    <select class="form-select" id="filtroObservacoes">
+                        <option value="">Todas as observações</option>
+                        <option value="com">Com observações</option>
+                        <option value="sem">Sem observações</option>
+                    </select>
+                </div>
+            </div>
+
+            <!-- Tabela de Convidados -->
+            <div class="table-responsive">
+                <table class="table table-hover">
+                    <thead class="table-light">
+                        <tr>
+                            <th>Nome</th>
+                            <th>Email</th>
+                            <th>Telefone</th>
+                            <th>Status</th>
+                            <th>Observações</th>
+                            <th>Ações</th>
+                        </tr>
+                    </thead>
+                    <tbody id="listaConvidados">
+                        <!-- Será preenchido via JavaScript -->
+                    </tbody>
+                </table>
+            </div>
         </div>
     </div>
 </div>
@@ -62,7 +164,7 @@
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
             <div class="modal-body">
-                <form id="convidadoForm">
+                <form id="formAddConvidado">
                     <div class="mb-3">
                         <label for="nomeConvidado" class="form-label">Nome</label>
                         <input type="text" class="form-control" id="nomeConvidado" required>
@@ -75,11 +177,16 @@
                         <label for="telefoneConvidado" class="form-label">Telefone</label>
                         <input type="tel" class="form-control" id="telefoneConvidado">
                     </div>
+                    <div class="mb-3">
+                        <label for="observacoesConvidado" class="form-label">Observações</label>
+                        <textarea class="form-control" id="observacoesConvidado" rows="3" 
+                                placeholder="Restrições alimentares, necessidades especiais, etc."></textarea>
+                    </div>
                 </form>
             </div>
             <div class="modal-footer">
                 <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
-                <button type="button" class="btn btn-primary" id="salvarConvidado">Adicionar</button>
+                <button type="button" class="btn btn-primary" onclick="adicionarConvidado()">Adicionar</button>
             </div>
         </div>
     </div>
@@ -94,19 +201,20 @@
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
             <div class="modal-body">
-                <form id="importarForm">
+                <form id="formImportarConvidados">
                     <div class="mb-3">
-                        <label for="arquivoExcel" class="form-label">Arquivo Excel</label>
-                        <input type="file" class="form-control" id="arquivoExcel" accept=".xlsx,.xls" required>
+                        <label for="arquivoConvidados" class="form-label">Arquivo Excel</label>
+                        <input type="file" class="form-control" id="arquivoConvidados" accept=".xlsx,.xls,.csv" required>
                     </div>
-                    <p class="text-muted">
-                        O arquivo deve ter as colunas: Nome, Email, Telefone (opcional)
-                    </p>
+                    <div class="alert alert-info">
+                        <h6><i class="bi bi-info-circle"></i> Formato do arquivo:</h6>
+                        <p class="mb-0">O arquivo deve conter as colunas: Nome, Email, Telefone (opcional)</p>
+                    </div>
                 </form>
             </div>
             <div class="modal-footer">
                 <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
-                <button type="button" class="btn btn-primary" id="importarConvidados">Importar</button>
+                <button type="button" class="btn btn-primary" onclick="importarConvidados()">Importar</button>
             </div>
         </div>
     </div>
@@ -121,20 +229,32 @@
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
             <div class="modal-body">
-                <div class="progress mb-3" style="height: 20px;">
-                    <div class="progress-bar progress-bar-striped progress-bar-animated" 
-                         role="progressbar" 
-                         id="progressoEnvio"
-                         style="width: 0%">
-                        0%
-                    </div>
+                <div class="progress mb-3">
+                    <div class="progress-bar" role="progressbar" style="width: 0%"></div>
                 </div>
-                <div id="statusEnvioTexto" class="alert alert-info">
-                    Preparando para enviar...
+                <div id="statusEnvioTexto">Preparando envio...</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Modal Observações -->
+<div class="modal fade" id="observacoesModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Observações do Convidado</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="convidado-info mb-3">
+                    <p><strong>Nome:</strong> <span id="obsNome"></span></p>
+                    <p><strong>Email:</strong> <span id="obsEmail"></span></p>
+                    <p><strong>Status:</strong> <span id="obsStatus"></span></p>
                 </div>
-                <div id="resultadoEnvio" class="mt-3">
-                    <div class="text-success" id="enviosSuccess"></div>
-                    <div class="text-danger" id="enviosError"></div>
+                <div class="observacoes-content">
+                    <h6>Observações:</h6>
+                    <div id="obsTexto" class="border p-3 rounded bg-light"></div>
                 </div>
             </div>
             <div class="modal-footer">
@@ -147,222 +267,32 @@
 {% endblock %}
 
 {% block extra_js %}
+<script src="https://cdnjs.cloudflare.com/ajax/libs/moment.js/2.29.1/moment.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.17.0/xlsx.full.min.js"></script>
+<script src="/static/js/detalhes_evento.js"></script>
 <script>
-$(document).ready(function() {
-    const eventoId = window.location.pathname.split('/').pop();
-
-    function carregarEvento() {
-        $.ajax({
-            url: '/api/eventos/' + eventoId,
-            method: 'GET',
-            success: function(evento) {
-                $('#nomeEvento').text(evento.nome);
-                $('#responsavel').text(evento.responsavel);
-                $('#data').text(evento.data);
-                $('#hora').text(evento.hora);
-                $('#local').text(evento.local);
-                $('#categoria').text(evento.categoria);
-                $('#descricao').text(evento.descricao || 'Sem descrição');
-                
-                atualizarListaConvidados(evento.convidados || []);
-            },
-            error: function(xhr, status, error) {
-                alert('Erro ao carregar evento: ' + error);
-            }
-        });
-    }
-
-    function atualizarListaConvidados(convidados) {
-        const tbody = $('#listaConvidados');
-        tbody.empty();
-    
-        convidados.forEach(function(convidado) {
-            const tr = $('<tr>');
-            tr.append($('<td>').text(convidado.nome));
-            tr.append($('<td>').text(convidado.email));
-            tr.append($('<td>').text(convidado.telefone || '-'));
-            tr.append($('<td>').text(convidado.status || 'pendente'));
-            
-            // Coluna de ações
-            const tdAcoes = $('<td>');
-            
-            // Botão de reenviar email
-            const btnReenviar = $('<button>')
-                .addClass('btn btn-sm btn-outline-primary me-1')
-                .html('<i class="bi bi-envelope"></i>')
-                .attr('title', 'Reenviar Email')
-                .click(function() {
-                    enviarEmailIndividual(convidado);
-                });
-            
-            // Botão de excluir
-            const btnExcluir = $('<button>')
-                .addClass('btn btn-sm btn-outline-danger')
-                .html('<i class="bi bi-trash"></i>')
-                .attr('title', 'Excluir Convidado')
-                .click(function() {
-                    excluirConvidado(convidado);
-                });
-            
-            tdAcoes.append(btnReenviar, btnExcluir);
-            tr.append(tdAcoes);
-            
-            tbody.append(tr);
-        });
-    }
-    
-    // Função para excluir convidado
-    function excluirConvidado(convidado) {
-        if (!confirm(`Tem certeza que deseja excluir o convidado ${convidado.nome}?`)) {
-            return;
-        }
-    
-        const eventoId = window.location.pathname.split('/').pop();
-    
-        $.ajax({
-            url: `/api/eventos/${eventoId}/convidados/excluir`,
-            method: 'DELETE',
-            contentType: 'application/json',
-            data: JSON.stringify({
-                email: convidado.email
-            }),
-            success: function(response) {
-                alert('Convidado excluído com sucesso!');
-                carregarEvento(); // Recarrega a lista de convidados
-            },
-            error: function(xhr, status, error) {
-                alert('Erro ao excluir convidado: ' + error);
-            }
-        });
-    }
-
-    async function enviarEmailIndividual(convidado) {
-        try {
-            await $.ajax({
-                url: `/api/eventos/${eventoId}/convidados/enviar-email`,
-                method: 'POST',
-                contentType: 'application/json',
-                data: JSON.stringify({
-                    email: convidado.email,
-                    nome: convidado.nome
-                })
-            });
-            alert('Email enviado com sucesso!');
-        } catch (error) {
-            alert('Erro ao enviar email: ' + error);
-        }
-    }
-
-    // Carregar evento ao iniciar
-    carregarEvento();
-
-    // Adicionar convidado
-    $('#salvarConvidado').click(function() {
-        const convidado = {
-            nome: $('#nomeConvidado').val(),
-            email: $('#emailConvidado').val(),
-            telefone: $('#telefoneConvidado').val()
+    // Função para mostrar observações
+    function mostrarObservacoes(nome, email, status, observacoes) {
+        // Escape para caracteres especiais
+        const escapeHtml = (unsafe) => {
+            return unsafe
+                 .replace(/&/g, "&amp;")
+                 .replace(/</g, "&lt;")
+                 .replace(/>/g, "&gt;")
+                 .replace(/"/g, "&quot;")
+                 .replace(/'/g, "&#039;");
         };
 
-        $.ajax({
-            url: '/api/eventos/' + eventoId + '/convidados',
-            method: 'POST',
-            contentType: 'application/json',
-            data: JSON.stringify(convidado),
-            success: function(response) {
-                alert('Convidado adicionado com sucesso!');
-                $('#addConvidadoModal').modal('hide');
-                carregarEvento();
-                
-                // Limpar formulário
-                $('#convidadoForm')[0].reset();
-            },
-            error: function(xhr, status, error) {
-                alert('Erro ao adicionar convidado: ' + error);
-            }
-        });
-    });
-
-    // Importar convidados
-    $('#importarConvidados').click(function() {
-        const formData = new FormData();
-        const fileInput = $('#arquivoExcel')[0];
-        formData.append('file', fileInput.files[0]);
-
-        $.ajax({
-            url: '/api/eventos/' + eventoId + '/convidados/importar',
-            method: 'POST',
-            data: formData,
-            processData: false,
-            contentType: false,
-            success: function(response) {
-                alert('Lista importada com sucesso!');
-                $('#importarConvidadosModal').modal('hide');
-                carregarEvento();
-                
-                // Limpar formulário
-                $('#importarForm')[0].reset();
-            },
-            error: function(xhr, status, error) {
-                alert('Erro ao importar lista: ' + error);
-            }
-        });
-    });
-
-    // Enviar emails em massa
-    $('#enviarEmails').click(async function() {
-        const modal = new bootstrap.Modal(document.getElementById('statusEnvioModal'));
-        modal.show();
+        document.getElementById('obsNome').textContent = nome;
+        document.getElementById('obsEmail').textContent = email;
+        document.getElementById('obsStatus').textContent = status;
         
-        const convidados = $('#listaConvidados tr').map(function() {
-            return {
-                nome: $(this).find('td:eq(0)').text(),
-                email: $(this).find('td:eq(1)').text(),
-                status: $(this).find('td:eq(3)').text()
-            };
-        }).get();
-
-        const totalConvidados = convidados.length;
-        let sucessos = 0;
-        let erros = 0;
+        const obsTexto = document.getElementById('obsTexto');
+        obsTexto.innerHTML = observacoes ? escapeHtml(observacoes) : 'Nenhuma observação disponível.';
         
-        for (let i = 0; i < convidados.length; i++) {
-            const convidado = convidados[i];
-            
-            // Atualiza a barra de progresso
-            const progresso = Math.round(((i + 1) / totalConvidados) * 100);
-            $('#progressoEnvio').css('width', progresso + '%').text(progresso + '%');
-            $('#statusEnvioTexto').text(`Enviando email para ${convidado.email}...`);
-
-            try {
-                if (convidado.status.toLowerCase() !== 'confirmado' && 
-                    convidado.status.toLowerCase() !== 'recusado') {
-                    await $.ajax({
-                        url: `/api/eventos/${eventoId}/convidados/enviar-email`,
-                        method: 'POST',
-                        contentType: 'application/json',
-                        data: JSON.stringify({
-                            email: convidado.email,
-                            nome: convidado.nome
-                        })
-                    });
-                    sucessos++;
-                }
-            } catch (error) {
-                erros++;
-                console.error(`Erro ao enviar email para ${convidado.email}:`, error);
-            }
-
-            // Atualiza contadores
-            $('#enviosSuccess').text(`Emails enviados com sucesso: ${sucessos}`);
-            if (erros > 0) {
-                $('#enviosError').text(`Falhas no envio: ${erros}`);
-            }
-        }
-
-        $('#statusEnvioTexto').text('Envio concluído!');
-        $('#statusEnvioTexto').removeClass('alert-info').addClass('alert-success');
-    });
-});
+        // Usar Bootstrap para mostrar o modal
+        const observacoesModal = new bootstrap.Modal(document.getElementById('observacoesModal'));
+        observacoesModal.show();
+    }
 </script>
 {% endblock %}

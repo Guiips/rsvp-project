@@ -1,0 +1,114 @@
+{% extends "base.html" %}
+
+{% block title %}Relatórios{% endblock %}
+
+{% block content %}
+<div class="container">
+    <div class="row mb-4">
+        <div class="col-12 d-flex justify-content-between align-items-center">
+            <h2 class="border-bottom pb-2">
+                <i class="bi bi-graph-up"></i> Relatórios do Sistema
+            </h2>
+            <a href="/sair" class="btn btn-danger">
+                <i class="bi bi-box-arrow-right"></i> Sair
+            </a>
+        </div>
+    </div>
+
+    <div class="row">
+        <div class="col-md-4 mb-4">
+            <div class="card h-100 shadow-sm">
+                <div class="card-header bg-primary text-white">
+                    <h5 class="mb-0">
+                        <i class="bi bi-calendar3"></i> Relatório por Evento
+                    </h5>
+                </div>
+                <div class="card-body">
+                    <p>
+                        Relatório detalhado de um evento específico, incluindo informações completas, 
+                        status de participação e detalhes dos convidados com observações.
+                    </p>
+                    <div class="form-group mb-3">
+                        <label for="eventoSelect" class="form-label">Selecione o evento:</label>
+                        <select class="form-select" id="eventoSelect">
+                            <option value="">Selecione um evento...</option>
+                            {% for evento in eventos %}
+                                <option value="{{ evento.id }}">{{ evento.nome }} ({{ evento.data }})</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="d-grid">
+                        <button onclick="gerarRelatorioPorEvento()" class="btn btn-outline-primary">
+                            <i class="bi bi-download"></i> Baixar Relatório
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-md-4 mb-4">
+            <div class="card h-100 shadow-sm">
+                <div class="card-header bg-success text-white">
+                    <h5 class="mb-0">
+                        <i class="bi bi-people"></i> Relatório Completo
+                    </h5>
+                </div>
+                <div class="card-body">
+                    <p>
+                        Relatório completo e profissional com todos os eventos, estatísticas globais, 
+                        análises e detalhes de cada evento com seus convidados.
+                    </p>
+                    <p class="text-muted">Este relatório contém múltiplas planilhas com análises detalhadas.</p>
+                    <div class="d-grid">
+                        <a href="/api/relatorios/gerar-relatorio-completo" class="btn btn-outline-success">
+                            <i class="bi bi-download"></i> Baixar Relatório
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-md-4 mb-4">
+            <div class="card h-100 shadow-sm">
+                <div class="card-header bg-info text-white">
+                    <h5 class="mb-0">
+                        <i class="bi bi-bar-chart"></i> Relatório Simples
+                    </h5>
+                </div>
+                <div class="card-body">
+                    <p>
+                        Relatório básico com a lista de todos os eventos e seus convidados 
+                        em um formato simples e fácil de visualizar.
+                    </p>
+                    <div class="d-grid">
+                        <a href="/api/relatorios/gerar-relatorio" class="btn btn-outline-info">
+                            <i class="bi bi-download"></i> Baixar Relatório
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    function gerarRelatorioPorEvento() {
+        const eventoSelect = document.getElementById('eventoSelect');
+        const eventoId = eventoSelect.value;
+        
+        if (!eventoId) {
+            Swal.fire({
+                icon: 'warning',
+                title: 'Oops...',
+                text: 'Por favor, selecione um evento!',
+                confirmButtonColor: '#3085d6'
+            });
+            return;
+        }
+        
+        window.location.href = `/api/relatorios/gerar-relatorio-evento/${eventoId}`;
+    }
+</script>
+{% endblock %}

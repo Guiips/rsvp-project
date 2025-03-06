@@ -26,6 +26,9 @@ async def criar_evento(evento: Evento):
         evento_dict = evento.dict(exclude_unset=True)
         result = await db.eventos.insert_one(evento_dict)
         evento_dict['_id'] = str(result.inserted_id)
+        
+        print(f"Evento criado: {evento_dict}")  # Log de depuração
+        
         return evento_dict
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -360,6 +363,77 @@ async def enviar_email_convidado(
         raise HTTPException(status_code=500, detail=f"Erro ao enviar email: {str(e)}")
 
 
+@eventos_router.post("/{evento_id}/convidados/enviar-emails")
+async def enviar_emails_convidados(request: Request, evento_id: str):
+    """Envia emails para todos os convidados do evento"""
+    db = obter_db()
+    try:
+        object_id = ObjectId(evento_id)
+        evento = await db.eventos.find_one({"_id": object_id})
+        
+        if not evento:
+            raise HTTPException(status_code=404, detail="Evento não encontrado")
+        
+        convidados = evento.get('convidados', [])
+        
+        if not convidados:
+            return {"mensagem": "Não há convidados para enviar emails."}
+        
+        base_url = str(request.base_url).rstrip('/')
+        emails_enviados = 0
+        emails_com_erro = []
+        
+        for convidado in convidados:
+            try:
+                email = convidado.get('email')
+                nome = convidado.get('nome')
+                
+                if not email or not nome:
+                    continue
+                
+                # Gera os links de confirmação
+                try:
+                    link_confirmacao, link_recusa = email_service.gerar_tokens_para_evento(
+                        evento_id=evento_id,
+                        email_convidado=email,
+                        base_url=base_url
+                    )
+                except Exception as token_error:
+                    print(f"Erro ao gerar tokens para {email}: {str(token_error)}")
+                    # Fallback para o método antigo
+                    link_confirmacao = f"{base_url}/api/eventos/confirmar-presenca/{evento_id}/{email}/sim"
+                    link_recusa = f"{base_url}/api/eventos/confirmar-presenca/{evento_id}/{email}/nao"
+                
+                # Envia o email
+                await email_service.enviar_email_confirmacao(
+                    email=email,
+                    nome=nome,
+                    evento_nome=evento['nome'],
+                    evento_data=evento['data'],
+                    evento_hora=evento['hora'],
+                    evento_local=evento['local'],
+                    link_confirmacao=link_confirmacao,
+                    link_recusa=link_recusa
+                )
+                
+                emails_enviados += 1
+                
+            except Exception as email_error:
+                print(f"Erro ao enviar email para {email}: {str(email_error)}")
+                emails_com_erro.append(email)
+        
+        return {
+            "mensagem": f"Emails enviados com sucesso: {emails_enviados}",
+            "total_enviados": emails_enviados,
+            "total_erros": len(emails_com_erro),
+            "emails_com_erro": emails_com_erro
+        }
+        
+    except Exception as e:
+        print(f"Erro ao enviar emails: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @eventos_router.get("/confirmar/{token}")
 async def confirmar_convite(token: str, request: Request):
     """Confirma a presença do convidado usando token JWT"""
@@ -594,6 +668,39 @@ async def atualizar_evento(evento_id: str, evento_update: EventoUpdate):
         evento_atualizado['_id'] = str(evento_atualizado['_id'])
         
         return evento_atualizado
+    
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    
+    
+@eventos_router.post("/{evento_id}/convidados/observacoes")
+async def adicionar_observacoes(
+    evento_id: str,
+    dados: dict = Body(...)
+):
+    """Adiciona observações a um convidado específico"""
+    db = obter_db()
+    try:
+        object_id = ObjectId(evento_id)
+        
+        # Atualiza as observações do convidado
+        resultado = await db.eventos.update_one(
+            {
+                "_id": object_id,
+                "convidados.email": dados['email']
+            },
+            {
+                "$set": {
+                    "convidados.$.observacoes": dados['observacoes'],
+                    "convidados.$.data_observacoes": datetime.utcnow()
+                }
+            }
+        )
+        
+        if resultado.modified_count == 0:
+            raise HTTPException(status_code=404, detail="Convidado não encontrado")
+        
+        return {"mensagem": "Observações salvas com sucesso"}
     
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

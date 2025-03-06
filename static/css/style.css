@@ -1,0 +1,103 @@
+/* Estilos globais */
+body {
+    font-family: 'Segoe UI', Arial, sans-serif;
+    background-color: #f8f9fa;
+}
+
+/* Cards */
+.card {
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    border: none;
+    margin-bottom: 1.5rem;
+}
+
+.card-header {
+    background-color: white;
+    border-bottom: 1px solid #eee;
+}
+
+/* Badges de status */
+.badge {
+    padding: 0.5em 1em;
+}
+
+.badge-confirmado {
+    background-color: #28a745;
+}
+
+.badge-recusado {
+    background-color: #dc3545;
+}
+
+.badge-pendente {
+    background-color: #ffc107;
+}
+
+/* Tabelas */
+.table th {
+    background-color: #f8f9fa;
+    border-top: none;
+}
+
+.table td {
+    vertical-align: middle;
+}
+
+/* Botões e ações */
+.btn-action {
+    padding: 0.25rem 0.5rem;
+    font-size: 0.875rem;
+}
+
+/* Formulários */
+.form-control:focus {
+    box-shadow: 0 0 0 0.2rem rgba(0,123,255,0.25);
+}
+
+/* Modal */
+.modal-content {
+    border-radius: 0.5rem;
+}
+
+.modal-header {
+    border-bottom: 1px solid #eee;
+}
+
+/* Estatísticas */
+.stats-card {
+    text-align: center;
+    padding: 1.5rem;
+}
+
+.stats-number {
+    font-size: 2rem;
+    font-weight: bold;
+}
+
+.stats-label {
+    color: #6c757d;
+    font-size: 0.875rem;
+}
+
+/* Observações */
+.observacoes-preview {
+    max-height: 100px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+/* Loading */
+.loading-spinner {
+    display: inline-block;
+    width: 2rem;
+    height: 2rem;
+    border: 0.25rem solid #f3f3f3;
+    border-top: 0.25rem solid #3498db;
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+}

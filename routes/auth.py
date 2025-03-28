@@ -145,7 +145,11 @@ async def verificar_autenticacao(request: Request, call_next):
         "/static/", 
         "/health", 
         "/favicon.ico",
-        "/sair"
+        "/sair",
+        # Adicionar rotas de confirmação/recusa como públicas
+        "/api/eventos/confirmar/",
+        "/api/eventos/recusar/",
+        "/api/eventos/confirmar-presenca/"
     ]
     
     # Verifica se a rota atual é pública

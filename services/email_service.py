@@ -261,28 +261,30 @@ class EmailService:
             print(f"Erro ao enviar email para {email}: {str(e)}")
             return False
             
-    @staticmethod
-    def gerar_tokens_para_evento(evento_id, email_convidado, base_url=None):
-        """
-        Gera tokens JWT e links completos para confirmação e recusa de presença
-        """
-        if base_url is None:
-            base_url = BASE_URL
-            
-        # Token para confirmar presença
-        token_confirmacao = EmailService.gerar_token_confirmacao(evento_id, email_convidado, acao='confirmar')
+    # Na classe EmailService, método gerar_tokens_para_evento:
+
+@staticmethod
+def gerar_tokens_para_evento(evento_id, email_convidado, base_url=None):
+    """
+    Gera tokens JWT e links completos para confirmação e recusa de presença
+    """
+    if base_url is None:
+        base_url = BASE_URL
         
-        # Token para recusar presença
-        token_recusa = EmailService.gerar_token_confirmacao(evento_id, email_convidado, acao='recusar')
-        
-        print(f"Link confirmação base: {base_url}/api/eventos/confirmar/")
-        print(f"Link recusa base: {base_url}/api/eventos/recusar/")
-        
-        # Criar links completos
-        link_confirmacao = f"{base_url}/api/eventos/confirmar/{token_confirmacao}"
-        link_recusa = f"{base_url}/api/eventos/recusar/{token_recusa}"
-        
-        return link_confirmacao, link_recusa
+    # Token para confirmar presença
+    token_confirmacao = EmailService.gerar_token_confirmacao(evento_id, email_convidado, acao='confirmar')
+    
+    # Token para recusar presença
+    token_recusa = EmailService.gerar_token_confirmacao(evento_id, email_convidado, acao='recusar')
+    
+    print(f"Link confirmação base: {base_url}/api/eventos/confirmar/")
+    print(f"Link recusa base: {base_url}/api/eventos/recusar/")
+    
+    # Criar links completos
+    link_confirmacao = f"{base_url}/api/eventos/confirmar/{token_confirmacao}"
+    link_recusa = f"{base_url}/api/eventos/recusar/{token_recusa}"
+    
+    return link_confirmacao, link_recusa
 
 # Cria uma instância do serviço de email
 email_service = EmailService()

@@ -8,23 +8,67 @@ document.addEventListener('DOMContentLoaded', function() {
     document.getElementById('filtroObservacoes').addEventListener('change', filtrarConvidados);
     
     // Listener para envio de emails
-    document.getElementById('enviarEmails').addEventListener('click', enviarEmailsConvidados);
+    document.getElementById('enviarEmails').addEventListener('click', function(e) {
+        e.preventDefault();
+        preVisualizarEmail();
+    });
+    
+    // Inicializa tooltips do Bootstrap
+    var tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
+    tooltipTriggerList.map(function (tooltipTriggerEl) {
+        return new bootstrap.Tooltip(tooltipTriggerEl);
+    });
+    
+    // Handler para auto-salvar em textareas
+    document.querySelectorAll('textarea[data-autosave]').forEach(textarea => {
+        let timeout;
+        textarea.addEventListener('input', function() {
+            clearTimeout(timeout);
+            timeout = setTimeout(() => {
+                const email = this.dataset.email;
+                const observacoes = this.value;
+                atualizarObservacoes(email, observacoes);
+            }, 1000);
+        });
+    });
 });
 
 // Carrega os dados do evento
 async function carregarDadosEvento() {
     try {
         const eventoId = getEventoId();
+        console.log("Carregando dados do evento:", eventoId);
+        
         const response = await fetch(`/api/eventos/${eventoId}`);
-        await handleFetchError(response);
+        
+        // Verificação de erro na resposta
+        if (!response.ok) {
+            const text = await response.text();
+            console.error('Resposta não-OK:', text);
+            throw new Error(`Erro ${response.status}: ${response.statusText}`);
+        }
+        
+        // Verificação do tipo de conteúdo
+        const contentType = response.headers.get('content-type');
+        if (!contentType || !contentType.includes('application/json')) {
+            const text = await response.text();
+            console.error('Resposta não-JSON:', text);
+            throw new Error('Resposta não é JSON');
+        }
+        
         const evento = await response.json();
+        console.log("Dados do evento carregados:", evento);
         
         // Preenche os dados do evento
         preencherDadosEvento(evento);
+        
         // Atualiza estatísticas
-        atualizarEstatisticas(evento.convidados || []);
-        // Carrega lista de convidados
-        renderizarConvidados(evento.convidados || []);
+        const convidados = evento.convidados || [];
+        console.log("Total de convidados:", convidados.length);
+        atualizarEstatisticas(convidados);
+        
+        // Renderiza a lista de convidados
+        renderizarConvidados(convidados);
         
     } catch (error) {
         console.error('Erro ao carregar dados do evento:', error);
@@ -34,12 +78,12 @@ async function carregarDadosEvento() {
 
 // Preenche os dados básicos do evento
 function preencherDadosEvento(evento) {
-    document.getElementById('nomeEvento').textContent = evento.nome;
-    document.getElementById('responsavel').textContent = evento.responsavel;
-    document.getElementById('data').textContent = formatarData(evento.data);
-    document.getElementById('hora').textContent = evento.hora;
-    document.getElementById('local').textContent = evento.local;
-    document.getElementById('categoria').textContent = evento.categoria;
+    document.getElementById('nomeEvento').textContent = evento.nome || 'Sem nome';
+    document.getElementById('responsavel').textContent = evento.responsavel || 'Não informado';
+    document.getElementById('data').textContent = formatarData(evento.data) || 'Não informada';
+    document.getElementById('hora').textContent = evento.hora || 'Não informada';
+    document.getElementById('local').textContent = evento.local || 'Não informado';
+    document.getElementById('categoria').textContent = evento.categoria || 'Não informada';
     document.getElementById('descricao').textContent = evento.descricao || 'Sem descrição';
 }
 
@@ -47,14 +91,15 @@ function preencherDadosEvento(evento) {
 function atualizarEstatisticas(convidados) {
     const stats = convidados.reduce((acc, conv) => {
         acc.total++;
-        acc[conv.status.toLowerCase()]++;
+        const status = (conv.status || 'pendente').toLowerCase();
+        acc[status] = (acc[status] || 0) + 1;
         return acc;
-    }, { total: 0, confirmado: 0, recusado: 0, pendente: 0 });
+    }, { total: 0 });
     
-    document.getElementById('totalConvidados').textContent = stats.total;
-    document.getElementById('totalConfirmados').textContent = stats.confirmado;
-    document.getElementById('totalRecusados').textContent = stats.recusado;
-    document.getElementById('totalPendentes').textContent = stats.pendente;
+    document.getElementById('totalConvidados').textContent = stats.total || 0;
+    document.getElementById('totalConfirmados').textContent = stats.confirmado || 0;
+    document.getElementById('totalRecusados').textContent = stats.recusado || 0;
+    document.getElementById('totalPendentes').textContent = stats.pendente || 0;
 }
 
 // Renderiza a lista de convidados
@@ -62,7 +107,7 @@ function renderizarConvidados(convidados) {
     const tbody = document.getElementById('listaConvidados');
     tbody.innerHTML = '';
     
-    if (convidados.length === 0) {
+    if (!convidados || convidados.length === 0) {
         tbody.innerHTML = `
             <tr>
                 <td colspan="6" class="text-center">Nenhum convidado cadastrado.</td>
@@ -72,25 +117,37 @@ function renderizarConvidados(convidados) {
     }
     
     convidados.forEach(convidado => {
+        // Função para escapar caracteres especiais
+        const escapeHtml = (unsafe) => {
+            if (!unsafe) return '';
+            return unsafe
+                .replace(/&/g, "&amp;")
+                .replace(/</g, "&lt;")
+                .replace(/>/g, "&gt;")
+                .replace(/"/g, "&quot;")
+                .replace(/'/g, "&#039;");
+        };
+        
         const row = document.createElement('tr');
         
+        // Verificação segura para observações
         const obsHtml = convidado.observacoes ? 
-            `<button class="btn btn-info btn-sm" onclick="mostrarObservacoes('${convidado.nome}', '${convidado.email}', '${convidado.status}', '${convidado.observacoes.replace(/'/g, "\\'")}')">
+            `<button class="btn btn-info btn-sm" onclick="mostrarObservacoes('${escapeHtml(convidado.nome)}', '${escapeHtml(convidado.email)}', '${escapeHtml(convidado.status)}', '${escapeHtml(convidado.observacoes)}')">
                 <i class="bi bi-info-circle"></i> Ver
             </button>` : 
             '<span class="text-muted">-</span>';
         
         row.innerHTML = `
-            <td>${convidado.nome}</td>
-            <td>${convidado.email}</td>
-            <td>${convidado.telefone || '-'}</td>
-            <td><span class="badge ${getStatusClass(convidado.status)}">${convidado.status}</span></td>
+            <td>${escapeHtml(convidado.nome)}</td>
+            <td>${escapeHtml(convidado.email)}</td>
+            <td>${convidado.telefone ? escapeHtml(convidado.telefone) : '-'}</td>
+            <td><span class="badge ${getStatusClass(convidado.status)}">${escapeHtml(convidado.status)}</span></td>
             <td>${obsHtml}</td>
             <td>
-                <button class="btn btn-primary btn-sm me-1" onclick="reenviarEmail('${convidado.email}', '${convidado.nome}')" title="Reenviar Email">
+                <button class="btn btn-primary btn-sm me-1" onclick="reenviarEmail('${escapeHtml(convidado.email)}', '${escapeHtml(convidado.nome)}')" title="Reenviar Email">
                     <i class="bi bi-envelope"></i>
                 </button>
-                <button class="btn btn-danger btn-sm" onclick="excluirConvidado('${convidado.email}')" title="Excluir">
+                <button class="btn btn-danger btn-sm" onclick="excluirConvidado('${escapeHtml(convidado.email)}')" title="Excluir">
                     <i class="bi bi-trash"></i>
                 </button>
             </td>
@@ -98,17 +155,302 @@ function renderizarConvidados(convidados) {
         
         tbody.appendChild(row);
     });
-    
-    // Inicializa tooltips
-    var tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
-    tooltipTriggerList.map(function (tooltipTriggerEl) {
-        return new bootstrap.Tooltip(tooltipTriggerEl);
+}
+
+// Função para mostrar observações
+function mostrarObservacoes(nome, email, status, observacoes) {
+    Swal.fire({
+        title: 'Observações do Convidado',
+        html: `
+            <div class="text-start">
+                <p><strong>Nome:</strong> ${nome}</p>
+                <p><strong>Email:</strong> ${email}</p>
+                <p><strong>Status:</strong> ${status}</p>
+                <hr>
+                <p><strong>Observações:</strong></p>
+                <p>${observacoes ? observacoes : 'Nenhuma observação disponível.'}</p>
+            </div>
+        `,
+        icon: 'info',
+        confirmButtonText: 'Fechar'
     });
+}
+
+// Função para mostrar o email antes de enviar
+function preVisualizarEmail() {
+    // Busca dados do evento
+    const eventoNome = document.getElementById('nomeEvento').textContent;
+    const eventoData = document.getElementById('data').textContent;
+    const eventoHora = document.getElementById('hora').textContent;
+    const eventoLocal = document.getElementById('local').textContent;
+    const eventoDescricao = document.getElementById('descricao').textContent || eventoNome;
+    const eventoResponsavel = document.getElementById('responsavel').textContent;
+    
+    // Template comprovadamente compatível com Gmail
+    const emailPadrao = `
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+  <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
+  <title>Convite para ${eventoNome}</title>
+</head>
+<body style="margin:0; padding:0; font-family:Arial, Helvetica, sans-serif;">
+  <table border="0" cellpadding="0" cellspacing="0" width="100%" style="background-color:#f7f7f7;">
+    <tr>
+      <td align="center">
+        <table border="0" cellpadding="0" cellspacing="0" width="600" style="background-color:#ffffff; border:1px solid #e0e0e0;">
+          <!-- Cabeçalho -->
+          <tr>
+            <td align="center" bgcolor="#1976D2" style="padding:20px;">
+              <h1 style="color:#ffffff; margin:0; font-size:24px; font-weight:bold;">Convite Oficial</h1>
+            </td>
+          </tr>
+          
+          <!-- Conteúdo -->
+          <tr>
+            <td style="padding:30px 20px;">
+              <p style="margin-top:0;">Bom dia, Dr(a). [Nome do Convidado],</p>
+              
+              <p style="margin-bottom:15px;">Meu nome é ${eventoResponsavel} e falo em nome da <strong>${eventoNome}</strong>.</p>
+              
+              <p style="margin-bottom:15px;">É com grande satisfação que oficializamos o convite para o <strong>${eventoDescricao}</strong>.</p>
+              
+              <!-- Detalhes do evento -->
+              <table border="0" cellpadding="10" cellspacing="0" width="100%" style="background-color:#f5f5f5; margin:20px 0; border-left:4px solid #1976D2;">
+                <tr>
+                  <td width="100"><strong>Data:</strong></td>
+                  <td>${eventoData}</td>
+                </tr>
+                <tr>
+                  <td width="100"><strong>Horário:</strong></td>
+                  <td>${eventoHora}</td>
+                </tr>
+                <tr>
+                  <td width="100"><strong>Local:</strong></td>
+                  <td>${eventoLocal}</td>
+                </tr>
+              </table>
+              
+              <p style="margin-bottom:25px;">Por gentileza, gostaríamos de saber se podemos confirmar sua presença.</p>
+              
+              <!-- Botões -->
+              <table border="0" cellpadding="0" cellspacing="0" width="100%">
+                <tr>
+                  <td align="center">
+                    <table border="0" cellpadding="0" cellspacing="0">
+                      <tr>
+                        <td bgcolor="#4CAF50" style="padding:12px 18px; border-radius:4px;">
+                          <a href="[Link de Confirmação]" target="_blank" style="color:#ffffff; text-decoration:none; display:inline-block; font-weight:bold;">Confirmar Presença</a>
+                        </td>
+                        <td width="20">&nbsp;</td>
+                        <td bgcolor="#f44336" style="padding:12px 18px; border-radius:4px;">
+                          <a href="[Link de Recusa]" target="_blank" style="color:#ffffff; text-decoration:none; display:inline-block; font-weight:bold;">Não Poderei Comparecer</a>
+                        </td>
+                      </tr>
+                    </table>
+                  </td>
+                </tr>
+              </table>
+              
+              <p style="margin-top:30px;">Atenciosamente,<br />
+              ${eventoResponsavel}<br />
+              ${eventoNome}</p>
+            </td>
+          </tr>
+          
+          <!-- Rodapé -->
+          <tr>
+            <td bgcolor="#f5f5f5" style="padding:15px; text-align:center; color:#757575; font-size:12px;">
+              <p style="margin:0;">Este é um e-mail automático. Por favor, não responda diretamente a esta mensagem.</p>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>
+    `;
+    
+    // O restante do código permanece o mesmo
+    Swal.fire({
+        title: 'Visualizar Email',
+        html: `
+            <div class="form-group">
+                <label for="assuntoEmail">Assunto:</label>
+                <input id="assuntoEmail" class="form-control" value="Convite para ${eventoNome}">
+            </div>
+            <div class="form-group mt-3">
+                <label for="corpoEmail">Conteúdo do Email:</label>
+                <textarea id="corpoEmail" class="form-control" style="height: 300px;">${emailPadrao}</textarea>
+            </div>
+            <div class="alert alert-info mt-3">
+                <small>[Nome do Convidado], [Link de Confirmação] e [Link de Recusa] serão substituídos automaticamente para cada convidado.</small>
+            </div>
+        `,
+        width: 800,
+        showCancelButton: true,
+        confirmButtonText: 'Enviar Emails',
+        cancelButtonText: 'Cancelar',
+        preConfirm: () => {
+            return {
+                assunto: document.getElementById('assuntoEmail').value,
+                corpo: document.getElementById('corpoEmail').value
+            };
+        }
+    }).then((result) => {
+        if (result.isConfirmed) {
+            enviarEmailsPersonalizados(result.value.assunto, result.value.corpo);
+        }
+    });
+}
+
+// Função para enviar emails personalizados
+async function enviarEmailsPersonalizados(assunto, corpo) {
+    try {
+        const eventoId = getEventoId();
+        
+        // Mostra um indicador de carregamento
+        Swal.fire({
+            title: 'Enviando emails...',
+            html: 'Por favor, aguarde enquanto os emails são enviados.',
+            allowOutsideClick: false,
+            didOpen: () => {
+                Swal.showLoading();
+            }
+        });
+        
+        // Faz a requisição para enviar os emails
+        const response = await fetch(`/api/eventos/${eventoId}/convidados/enviar-emails-template`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                assunto: assunto,
+                corpo: corpo
+            }),
+            // Evita seguir redirecionamentos automaticamente
+            redirect: 'error'
+        });
+        
+        // Verifica se a resposta é um redirecionamento
+        if (response.status === 303 || response.redirected) {
+            throw new Error("Redirecionamento detectado. Você pode não estar autenticado.");
+        }
+        
+        // Verifica o tipo de conteúdo da resposta
+        const contentType = response.headers.get('content-type');
+        if (!contentType || !contentType.includes('application/json')) {
+            const text = await response.text();
+            console.error('Resposta não é JSON:', text);
+            throw new Error('Resposta do servidor não está no formato JSON esperado');
+        }
+        
+        if (!response.ok) {
+            throw new Error(`Erro ${response.status}: ${response.statusText}`);
+        }
+        
+        const result = await response.json();
+        
+        // Mostra o resultado
+        Swal.fire({
+            title: 'Emails Enviados',
+            html: `${result.total_enviados} emails foram enviados com sucesso!<br>
+                   ${result.total_erros > 0 ? `${result.total_erros} emails não puderam ser enviados.` : ''}`,
+            icon: 'success'
+        });
+        
+    } catch (error) {
+        console.error('Erro ao enviar emails:', error);
+        Swal.fire({
+            title: 'Erro',
+            text: 'Ocorreu um erro ao enviar os emails: ' + error.message,
+            icon: 'error'
+        });
+    }
+}
+
+// Importar lista de convidados
+async function importarConvidados() {
+    const fileInput = document.getElementById('arquivoConvidados');
+    const file = fileInput.files[0];
+    
+    if (!file) {
+        showAlert('Por favor, selecione um arquivo.', 'warning');
+        return;
+    }
+    
+    const formData = new FormData();
+    formData.append('file', file);
+    
+    try {
+        const eventoId = getEventoId();
+        // URL com parâmetro para não enviar emails
+        const response = await fetch(`/api/eventos/${eventoId}/convidados/importar?enviar_emails=false`, {
+            method: 'POST',
+            body: formData
+        });
+        
+        if (!response.ok) {
+            throw new Error(`Erro ${response.status}: ${response.statusText}`);
+        }
+        
+        const result = await response.json();
+        
+        // Fecha o modal do formulário
+        const modal = bootstrap.Modal.getInstance(document.getElementById('importarConvidadosModal'));
+        modal.hide();
+        document.getElementById('formImportarConvidados').reset();
+        
+        // Monta a mensagem de sucesso com detalhes dos convidados
+        let mensagem = `${result.total_importados} convidados importados com sucesso!`;
+        
+        if (result.registros_completos) {
+            mensagem += ` (${result.registros_completos} com dados completos`;
+        }
+        
+        if (result.registros_incompletos) {
+            mensagem += `, ${result.registros_incompletos} com dados incompletos)`;
+        }
+        
+        if (result.convidados && result.convidados.length > 0) {
+            mensagem += '<br><br>Convidados importados (primeiros 5):<br>';
+            const convidadosExemplo = result.convidados.slice(0, 5);
+            
+            convidadosExemplo.forEach(convidado => {
+                mensagem += `- ${convidado.nome} (${convidado.email})<br>`;
+            });
+            
+            if (result.convidados.length > 5) {
+                mensagem += `... e mais ${result.convidados.length - 5} convidados.`;
+            }
+        }
+        
+        // Mostra o modal de sucesso e quando o usuário clicar em OK, recarrega a página
+        Swal.fire({
+            title: 'Sucesso!',
+            html: mensagem,
+            icon: 'success',
+            confirmButtonText: 'OK'
+        }).then(() => {
+            // Recarrega a página completamente para garantir que os dados sejam atualizados
+            window.location.reload();
+        });
+        
+    } catch (error) {
+        console.error('Erro ao importar convidados:', error);
+        showAlert('Erro ao importar convidados: ' + error.message, 'danger');
+    }
 }
 
 // Adiciona novo convidado
 async function adicionarConvidado() {
     try {
+        if (!validarFormularioConvidado()) {
+            return;
+        }
+        
         const eventoId = getEventoId();
         const nome = document.getElementById('nomeConvidado').value;
         const email = document.getElementById('emailConvidado').value;
@@ -123,7 +465,9 @@ async function adicionarConvidado() {
             body: JSON.stringify({ nome, email, telefone, observacoes })
         });
         
-        await handleFetchError(response);
+        if (!response.ok) {
+            throw new Error(`Erro ${response.status}: ${response.statusText}`);
+        }
         
         // Fecha o modal e limpa o formulário
         const modal = bootstrap.Modal.getInstance(document.getElementById('addConvidadoModal'));
@@ -152,7 +496,10 @@ async function reenviarEmail(email, nome) {
             body: JSON.stringify({ email, nome })
         });
         
-        await handleFetchError(response);
+        if (!response.ok) {
+            throw new Error(`Erro ${response.status}: ${response.statusText}`);
+        }
+        
         showAlert(`Email reenviado para ${nome}`);
         
     } catch (error) {
@@ -177,51 +524,16 @@ async function excluirConvidado(email) {
             body: JSON.stringify({ email })
         });
         
-        await handleFetchError(response);
+        if (!response.ok) {
+            throw new Error(`Erro ${response.status}: ${response.statusText}`);
+        }
+        
         await carregarDadosEvento();
         showAlert('Convidado excluído com sucesso!');
         
     } catch (error) {
         console.error('Erro ao excluir convidado:', error);
         showAlert('Erro ao excluir convidado: ' + error.message, 'danger');
-    }
-}
-
-// Importar lista de convidados
-async function importarConvidados() {
-    const fileInput = document.getElementById('arquivoConvidados');
-    const file = fileInput.files[0];
-    
-    if (!file) {
-        showAlert('Por favor, selecione um arquivo.', 'warning');
-        return;
-    }
-    
-    const formData = new FormData();
-    formData.append('file', file);
-    
-    try {
-        const eventoId = getEventoId();
-        const response = await fetch(`/api/eventos/${eventoId}/convidados/importar`, {
-            method: 'POST',
-            body: formData
-        });
-        
-        await handleFetchError(response);
-        const result = await response.json();
-        
-        // Fecha o modal e limpa o formulário
-        const modal = bootstrap.Modal.getInstance(document.getElementById('importarConvidadosModal'));
-        modal.hide();
-        document.getElementById('formImportarConvidados').reset();
-        
-        // Recarrega os dados
-        await carregarDadosEvento();
-        showAlert(`${result.total_importados} convidados importados com sucesso!`);
-        
-    } catch (error) {
-        console.error('Erro ao importar convidados:', error);
-        showAlert('Erro ao importar convidados: ' + error.message, 'danger');
     }
 }
 
@@ -233,7 +545,10 @@ async function enviarEmailsConvidados() {
             method: 'POST'
         });
         
-        await handleFetchError(response);
+        if (!response.ok) {
+            throw new Error(`Erro ${response.status}: ${response.statusText}`);
+        }
+        
         showAlert('Emails enviados com sucesso!');
         
     } catch (error) {
@@ -242,10 +557,170 @@ async function enviarEmailsConvidados() {
     }
 }
 
+// Função para filtrar convidados
+function filtrarConvidados() {
+    const searchTerm = document.getElementById('pesquisaConvidado').value.toLowerCase();
+    const statusFiltro = document.getElementById('filtroStatus').value.toLowerCase();
+    const obsFiltro = document.getElementById('filtroObservacoes').value;
+    
+    const rows = document.querySelectorAll('#listaConvidados tr');
+    
+    rows.forEach(row => {
+        if (row.cells.length < 4) return; // Ignora linhas inválidas
+        
+        const nome = row.cells[0].textContent.toLowerCase();
+        const email = row.cells[1].textContent.toLowerCase();
+        const status = row.cells[3].textContent.toLowerCase();
+        const temObs = row.cells[4].textContent.trim() !== '-';
+        
+        const matchSearch = nome.includes(searchTerm) || email.includes(searchTerm);
+        const matchStatus = !statusFiltro || status === statusFiltro;
+        const matchObs = !obsFiltro || 
+            (obsFiltro === 'com' && temObs) || 
+            (obsFiltro === 'sem' && !temObs);
+        
+        row.style.display = matchSearch && matchStatus && matchObs ? '' : 'none';
+    });
+}
+
+// Função para obter o ID do evento da URL
+function getEventoId() {
+    const path = window.location.pathname;
+    return path.split('/').pop();
+}
+
+// Função para obter a classe CSS do status
+function getStatusClass(status) {
+    const classes = {
+        'confirmado': 'bg-success',
+        'recusado': 'bg-danger',
+        'pendente': 'bg-warning'
+    };
+    return classes[(status || 'pendente').toLowerCase()] || 'bg-secondary';
+}
+
+// Atualizar observações do convidado
+async function atualizarObservacoes(email, observacoes) {
+    try {
+        const eventoId = getEventoId();
+        const response = await fetch(`/api/eventos/${eventoId}/convidados/observacoes`, {
+            method: 'POST', // Alterado para POST para corresponder ao backend
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ email, observacoes })
+        });
+        
+        if (!response.ok) {
+            throw new Error(`Erro ${response.status}: ${response.statusText}`);
+        }
+        
+        await carregarDadosEvento();
+        showAlert('Observações atualizadas com sucesso!');
+        
+    } catch (error) {
+        console.error('Erro ao atualizar observações:', error);
+        showAlert('Erro ao atualizar observações: ' + error.message, 'danger');
+    }
+}
+
+// Função para mostrar progresso de envio de emails
+function atualizarProgressoEnvio(progresso, total) {
+    const porcentagem = (progresso / total) * 100;
+    const progressBar = document.querySelector('.progress-bar');
+    if (progressBar) {
+        progressBar.style.width = `${porcentagem}%`;
+        progressBar.setAttribute('aria-valuenow', porcentagem);
+    }
+    const statusText = document.getElementById('statusEnvioTexto');
+    if (statusText) {
+        statusText.textContent = `Enviando emails... ${progresso} de ${total} (${Math.round(porcentagem)}%)`;
+    }
+}
+
+// Função para resetar progresso de envio
+function resetarProgressoEnvio() {
+    const progressBar = document.querySelector('.progress-bar');
+    if (progressBar) {
+        progressBar.style.width = '0%';
+        progressBar.setAttribute('aria-valuenow', 0);
+    }
+    const statusText = document.getElementById('statusEnvioTexto');
+    if (statusText) {
+        statusText.textContent = 'Preparando envio...';
+    }
+}
+
+// Função para formatar data
+function formatarData(dataStr) {
+    if (!dataStr) return '';
+    
+    try {
+        // Se for string no formato ISO, converte para DD/MM/YYYY
+        if (dataStr.includes('-')) {
+            const [ano, mes, dia] = dataStr.split('-');
+            return `${dia}/${mes}/${ano}`;
+        }
+        return dataStr;
+    } catch (e) {
+        return dataStr;
+    }
+}
+
+// Alerta usando SweetAlert
+function showAlert(message, type = 'success', allowHtml = false) {
+    Swal.fire({
+        title: type === 'success' ? 'Sucesso!' : 'Atenção!',
+        html: allowHtml ? message : undefined,
+        text: !allowHtml ? message : undefined,
+        icon: type,
+        confirmButtonText: 'OK'
+    });
+}
+
+// Função para escapar HTML
+function escapeHtml(unsafe) {
+    if (!unsafe) return '';
+    return unsafe
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#039;");
+}
+
+// Função para validar formulário de novo convidado
+function validarFormularioConvidado() {
+    const nome = document.getElementById('nomeConvidado').value.trim();
+    const email = document.getElementById('emailConvidado').value.trim();
+    
+    if (!nome) {
+        showAlert('O nome do convidado é obrigatório', 'warning');
+        return false;
+    }
+    
+    if (!email) {
+        showAlert('O email do convidado é obrigatório', 'warning');
+        return false;
+    }
+    
+    if (!email.match(/^[^\s@]+@[^\s@]+\.[^\s@]+$/)) {
+        showAlert('Por favor, insira um email válido', 'warning');
+        return false;
+    }
+    
+    return true;
+}
+
 // Funções para download de relatórios
 async function prepararDadosRelatorio() {
     const eventoId = getEventoId();
     const response = await fetch(`/api/eventos/${eventoId}`);
+    
+    if (!response.ok) {
+        throw new Error(`Erro ${response.status}: ${response.statusText}`);
+    }
+    
     const evento = await response.json();
     
     if (!evento.convidados || evento.convidados.length === 0) {
@@ -253,15 +728,16 @@ async function prepararDadosRelatorio() {
     }
     
     const dadosEvento = {
-        nome: evento.nome,
-        data: formatarData(evento.data),
-        hora: evento.hora,
-        local: evento.local,
-        responsavel: evento.responsavel
+        nome: evento.nome || 'Sem nome',
+        data: formatarData(evento.data) || 'Sem data',
+        hora: evento.hora || 'Sem horário',
+        local: evento.local || 'Sem local',
+        responsavel: evento.responsavel || 'Sem responsável'
     };
     
     const estatisticas = evento.convidados.reduce((acc, conv) => {
-        acc[conv.status.toLowerCase()]++;
+        const status = (conv.status || 'pendente').toLowerCase();
+        acc[status] = (acc[status] || 0) + 1;
         return acc;
     }, { confirmado: 0, recusado: 0, pendente: 0 });
     
@@ -292,10 +768,10 @@ async function baixarRelatorioCSV() {
         
         dados.convidados.forEach(convidado => {
             csvLinhas.push([
-                convidado.nome,
-                convidado.email,
+                convidado.nome || 'Sem nome',
+                convidado.email || 'Sem email',
                 convidado.telefone || '',
-                convidado.status,
+                convidado.status || 'pendente',
                 convidado.observacoes || ''
             ]);
         });
@@ -303,9 +779,9 @@ async function baixarRelatorioCSV() {
         csvLinhas.push(
             [''],
             ['Estatísticas:'],
-            ['Confirmados:', dados.stats.confirmado],
-            ['Recusados:', dados.stats.recusado],
-            ['Pendentes:', dados.stats.pendente],
+            ['Confirmados:', dados.stats.confirmado || 0],
+            ['Recusados:', dados.stats.recusado || 0],
+            ['Pendentes:', dados.stats.pendente || 0],
             ['Total:', dados.convidados.length]
         );
         
@@ -517,7 +993,7 @@ async function gerarRelatorioExcelComEstilo(dadosEvento, convidados) {
         
         // Aplicar cores baseadas no status
         let fillColor;
-        switch(convidado.status.toLowerCase()) {
+        switch((convidado.status || 'pendente').toLowerCase()) {
             case 'confirmado':
                 fillColor = 'FFE6F3E6'; // Verde claro
                 break;
@@ -562,176 +1038,4 @@ async function gerarRelatorioExcelComEstilo(dadosEvento, convidados) {
     document.body.removeChild(link);
     
     console.log('Relatório Excel gerado com sucesso!');
-}
-
-// Função para filtrar convidados
-function filtrarConvidados() {
-    const searchTerm = document.getElementById('pesquisaConvidado').value.toLowerCase();
-    const statusFiltro = document.getElementById('filtroStatus').value.toLowerCase();
-    const obsFiltro = document.getElementById('filtroObservacoes').value;
-    
-    const rows = document.querySelectorAll('#listaConvidados tr');
-    
-    rows.forEach(row => {
-        const nome = row.cells[0].textContent.toLowerCase();
-        const email = row.cells[1].textContent.toLowerCase();
-        const status = row.cells[3].textContent.toLowerCase();
-        const temObs = row.cells[4].textContent.trim() !== '-';
-        
-        const matchSearch = nome.includes(searchTerm) || email.includes(searchTerm);
-        const matchStatus = !statusFiltro || status === statusFiltro;
-        const matchObs = !obsFiltro || 
-            (obsFiltro === 'com' && temObs) || 
-            (obsFiltro === 'sem' && !temObs);
-        
-        row.style.display = matchSearch && matchStatus && matchObs ? '' : 'none';
-    });
-}
-
-// Função para obter o ID do evento da URL
-function getEventoId() {
-    const path = window.location.pathname;
-    return path.split('/').pop();
-}
-
-// Função para obter a classe CSS do status
-function getStatusClass(status) {
-    const classes = {
-        'confirmado': 'bg-success',
-        'recusado': 'bg-danger',
-        'pendente': 'bg-warning'
-    };
-    return classes[status.toLowerCase()] || 'bg-secondary';
-}
-
-// Atualizar observações do convidado
-async function atualizarObservacoes(email, observacoes) {
-    try {
-        const eventoId = getEventoId();
-        const response = await fetch(`/api/eventos/${eventoId}/convidados/observacoes`, {
-            method: 'PATCH',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({ email, observacoes })
-        });
-        
-        await handleFetchError(response);
-        await carregarDadosEvento();
-        showAlert('Observações atualizadas com sucesso!');
-        
-    } catch (error) {
-        console.error('Erro ao atualizar observações:', error);
-        showAlert('Erro ao atualizar observações: ' + error.message, 'danger');
-    }
-}
-
-// Inicialização de tooltips e handlers de eventos
-document.addEventListener('DOMContentLoaded', function() {
-    // Inicializa tooltips do Bootstrap
-    var tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
-    tooltipTriggerList.map(function (tooltipTriggerEl) {
-        return new bootstrap.Tooltip(tooltipTriggerEl);
-    });
-    
-    // Handler para auto-salvar em textareas
-    document.querySelectorAll('textarea[data-autosave]').forEach(textarea => {
-        let timeout;
-        textarea.addEventListener('input', function() {
-            clearTimeout(timeout);
-            timeout = setTimeout(() => {
-                const email = this.dataset.email;
-                const observacoes = this.value;
-                atualizarObservacoes(email, observacoes);
-            }, 1000);
-        });
-    });
-});
-
-// Função para mostrar progresso de envio de emails
-function atualizarProgressoEnvio(progresso, total) {
-    const porcentagem = (progresso / total) * 100;
-    document.querySelector('.progress-bar').style.width = `${porcentagem}%`;
-    document.querySelector('.progress-bar').setAttribute('aria-valuenow', porcentagem);
-    document.getElementById('statusEnvioTexto').textContent = 
-        `Enviando emails... ${progresso} de ${total} (${Math.round(porcentagem)}%)`;
-}
-
-// Função para resetar progresso de envio
-function resetarProgressoEnvio() {
-    document.querySelector('.progress-bar').style.width = '0%';
-    document.querySelector('.progress-bar').setAttribute('aria-valuenow', 0);
-    document.getElementById('statusEnvioTexto').textContent = 'Preparando envio...';
-}
-
-// Função para mostrar observações
-function mostrarObservacoes(nome, email, status, observacoes) {
-    // Adicione uma função para escapar caracteres especiais
-    const escapeHtml = (unsafe) => {
-        return unsafe
-            .replace(/&/g, "&amp;")
-            .replace(/</g, "&lt;")
-            .replace(/>/g, "&gt;")
-            .replace(/"/g, "&quot;")
-            .replace(/'/g, "&#039;");
-    };
-
-    Swal.fire({
-        title: 'Observações do Convidado',
-        html: `
-            <div class="text-start">
-                <p><strong>Nome:</strong> ${escapeHtml(nome)}</p>
-                <p><strong>Email:</strong> ${escapeHtml(email)}</p>
-                <p><strong>Status:</strong> ${escapeHtml(status)}</p>
-                <hr>
-                <p><strong>Observações:</strong></p>
-                <p>${observacoes ? escapeHtml(observacoes) : 'Nenhuma observação disponível.'}</p>
-            </div>
-        `,
-        icon: 'info',
-        confirmButtonText: 'Fechar'
-    });
-}
-
-// Na renderização dos convidados, ajuste a chamada do botão de observações
-if (convidado.observacoes) {
-    acoesTd.innerHTML += `
-        <button onclick="mostrarObservacoes('${escapeHtml(convidado.nome)}', '${escapeHtml(convidado.email)}', '${escapeHtml(convidado.status)}', '${escapeHtml(convidado.observacoes)}')" 
-                class="btn btn-sm btn-info btn-ver-observacoes">
-            <i class="bi bi-eye"></i> Ver
-        </button>
-    `;
-}
-
-// Adicione uma função de escape no escopo global
-function escapeHtml(unsafe) {
-    return unsafe
-        .replace(/&/g, "&amp;")
-        .replace(/</g, "&lt;")
-        .replace(/>/g, "&gt;")
-        .replace(/"/g, "&quot;")
-        .replace(/'/g, "&#039;");
-}
-
-// Função para validar formulário de novo convidado
-function validarFormularioConvidado() {
-    const nome = document.getElementById('nomeConvidado').value.trim();
-    const email = document.getElementById('emailConvidado').value.trim();
-    
-    if (!nome) {
-        showAlert('O nome do convidado é obrigatório', 'warning');
-        return false;
-    }
-    
-    if (!email) {
-        showAlert('O email do convidado é obrigatório', 'warning');
-        return false;
-    }
-    
-    if (!email.match(/^[^\s@]+@[^\s@]+\.[^\s@]+$/)) {
-        showAlert('Por favor, insira um email válido', 'warning');
-        return false;
-    }
-    
-    return true;
 }

@@ -44,7 +44,101 @@ class EmailService:
         except Exception as e:
             print(f"Erro ao gerar token de confirmação: {e}")
             return None
+        
     
+    def gerar_tokens_para_evento(self, evento_id, email_convidado, base_url=None):
+        """
+        Gera tokens JWT e links completos para confirmação e recusa de presença
+        """
+        if base_url is None:
+            base_url = BASE_URL
+            
+        # Token para confirmar presença
+        token_confirmacao = jwt.encode(
+            {
+                'evento_id': evento_id,
+                'email': email_convidado,
+                'acao': 'confirmar',
+                'exp': datetime.utcnow() + timedelta(days=30)
+            },
+            SECRET_KEY,
+            algorithm='HS256'
+        )
+        
+        # Token para recusar presença
+        token_recusa = jwt.encode(
+            {
+                'evento_id': evento_id,
+                'email': email_convidado,
+                'acao': 'recusar',
+                'exp': datetime.utcnow() + timedelta(days=30)
+            },
+            SECRET_KEY,
+            algorithm='HS256'
+        )
+        
+        # Criar links completos
+        link_confirmacao = f"{base_url}/api/eventos/confirmar/{token_confirmacao}"
+        link_recusa = f"{base_url}/api/eventos/recusar/{token_recusa}"
+        
+        return link_confirmacao, link_recusa
+
+    async def enviar_email_html(self, email, assunto, conteudo_html):
+        """
+        Envia um email com conteúdo HTML
+        """
+        try:
+            # Usar as configurações do .env
+            smtp_server = SMTP_SERVER
+            smtp_port = SMTP_PORT
+            smtp_username = SMTP_USERNAME
+            smtp_password = SMTP_PASSWORD
+            
+            print(f"Enviando email HTML para {email} usando servidor {smtp_server}:{smtp_port}")
+            
+            # Criar a mensagem de email
+            message = MIMEMultipart("alternative")
+            message["Subject"] = assunto
+            message["From"] = SENDER_EMAIL or smtp_username
+            message["To"] = email
+            
+            # Anexar a parte HTML à mensagem
+            parte_html = MIMEText(conteudo_html, "html")
+            message.attach(parte_html)
+            
+            # Tentar enviar o email primeiro com smtplib
+            try:
+                with smtplib.SMTP(smtp_server, smtp_port) as server:
+                    # Inicie TLS apenas se a porta for 587 ou 25
+                    if smtp_port in [587, 25]:
+                        server.starttls()
+                    server.login(smtp_username, smtp_password)
+                    server.send_message(message)
+                    print(f"Email HTML enviado com sucesso para {email}")
+                    return True
+            except Exception as smtp_error:
+                print(f"Erro ao enviar email com smtplib: {str(smtp_error)}")
+                # Tentar com aiosmtplib como fallback
+                try:
+                    if smtp_port == 465:
+                        async with aiosmtplib.SMTP(hostname=smtp_server, port=smtp_port, use_tls=True) as server:
+                            await server.login(smtp_username, smtp_password)
+                            await server.send_message(message)
+                    else:
+                        async with aiosmtplib.SMTP(hostname=smtp_server, port=smtp_port) as server:
+                            await server.starttls()
+                            await server.login(smtp_username, smtp_password)
+                            await server.send_message(message)
+                    print(f"Email HTML enviado com sucesso para {email} (via aiosmtplib)")
+                    return True
+                except Exception as async_error:
+                    print(f"Erro ao enviar email com aiosmtplib: {str(async_error)}")
+                    raise
+                    
+        except Exception as e:
+            print(f"Erro ao enviar email HTML para {email}: {str(e)}")
+            return False
+        
     @staticmethod
     async def enviar_email_confirmacao(
             email, nome, evento_nome, evento_data, evento_hora, evento_local,
@@ -263,28 +357,172 @@ class EmailService:
             
     # Na classe EmailService, método gerar_tokens_para_evento:
 
-@staticmethod
-def gerar_tokens_para_evento(evento_id, email_convidado, base_url=None):
+def gerar_tokens_para_evento(self, evento_id, email_convidado, base_url=None):
     """
     Gera tokens JWT e links completos para confirmação e recusa de presença
+    
+    Args:
+        evento_id: ID do evento
+        email_convidado: Email do convidado
+        base_url: URL base para os links
+        
+    Returns:
+        tuple: (link_confirmacao, link_recusa)
     """
     if base_url is None:
         base_url = BASE_URL
         
     # Token para confirmar presença
-    token_confirmacao = EmailService.gerar_token_confirmacao(evento_id, email_convidado, acao='confirmar')
+    token_confirmacao = jwt.encode(
+        {
+            'evento_id': evento_id,
+            'email': email_convidado,
+            'acao': 'confirmar',
+            'exp': datetime.utcnow() + timedelta(days=30)
+        },
+        SECRET_KEY,
+        algorithm='HS256'
+    )
     
     # Token para recusar presença
-    token_recusa = EmailService.gerar_token_confirmacao(evento_id, email_convidado, acao='recusar')
-    
-    print(f"Link confirmação base: {base_url}/api/eventos/confirmar/")
-    print(f"Link recusa base: {base_url}/api/eventos/recusar/")
+    token_recusa = jwt.encode(
+        {
+            'evento_id': evento_id,
+            'email': email_convidado,
+            'acao': 'recusar',
+            'exp': datetime.utcnow() + timedelta(days=30)
+        },
+        SECRET_KEY,
+        algorithm='HS256'
+    )
     
     # Criar links completos
     link_confirmacao = f"{base_url}/api/eventos/confirmar/{token_confirmacao}"
     link_recusa = f"{base_url}/api/eventos/recusar/{token_recusa}"
     
     return link_confirmacao, link_recusa
+
+async def enviar_email_html(self, email, assunto, conteudo_html):
+    """Envia um email com conteúdo HTML"""
+    try:
+        # Obter configurações
+        smtp_server = SMTP_SERVER
+        smtp_port = SMTP_PORT
+        smtp_username = SMTP_USERNAME
+        smtp_password = SMTP_PASSWORD
+        
+        print(f"Enviando email HTML para {email}")
+        
+        # Criar mensagem multi-part - IMPORTANTE para compatibilidade
+        message = MIMEMultipart()
+        message["Subject"] = assunto
+        message["From"] = SENDER_EMAIL or smtp_username
+        message["To"] = email
+        
+        # Primeiro, adicione uma versão em texto plano (importante para compatibilidade)
+        texto_plano = "Este email contém formatação HTML que seu cliente de email não suporta."
+        parte_texto = MIMEText(texto_plano, "plain")
+        message.attach(parte_texto)
+        
+        # Depois, adicione a versão HTML
+        parte_html = MIMEText(conteudo_html, "html")
+        message.attach(parte_html)
+        
+        # Tentar enviar com SMTP
+        try:
+            with smtplib.SMTP(smtp_server, smtp_port) as server:
+                if smtp_port in [587, 25]:
+                    server.starttls()
+                server.login(smtp_username, smtp_password)
+                server.send_message(message)
+                print(f"Email HTML enviado com sucesso para {email}")
+                return True
+        except Exception as smtp_error:
+            print(f"Erro ao enviar email com smtplib: {str(smtp_error)}")
+            # Fallback para aiosmtplib
+            try:
+                if smtp_port == 465:
+                    async with aiosmtplib.SMTP(hostname=smtp_server, port=smtp_port, use_tls=True) as server:
+                        await server.login(smtp_username, smtp_password)
+                        await server.send_message(message)
+                else:
+                    async with aiosmtplib.SMTP(hostname=smtp_server, port=smtp_port) as server:
+                        await server.starttls()
+                        await server.login(smtp_username, smtp_password)
+                        await server.send_message(message)
+                print(f"Email HTML enviado com sucesso para {email} (via aiosmtplib)")
+                return True
+            except Exception as async_error:
+                print(f"Erro ao enviar email com aiosmtplib: {str(async_error)}")
+                raise
+    except Exception as e:
+        print(f"Erro ao enviar email HTML para {email}: {str(e)}")
+        return False
+
+@staticmethod
+async def enviar_email_html(email, assunto, conteudo_html):
+    """
+    Envia um email com conteúdo HTML
+    
+    Args:
+        email: Email do destinatário
+        assunto: Assunto do email
+        conteudo_html: Conteúdo HTML do email
+    
+    Returns:
+        bool: True se o email foi enviado com sucesso
+    """
+    try:
+        # Usar as configurações do .env
+        smtp_server = SMTP_SERVER
+        smtp_port = SMTP_PORT
+        smtp_username = SMTP_USERNAME
+        smtp_password = SMTP_PASSWORD
+        
+        print(f"Enviando email HTML para {email} usando servidor {smtp_server}:{smtp_port}")
+        
+        # Criar a mensagem de email
+        message = MIMEMultipart("alternative")
+        message["Subject"] = assunto
+        message["From"] = SENDER_EMAIL or smtp_username
+        message["To"] = email
+        
+        # Anexar a parte HTML à mensagem
+        parte_html = MIMEText(conteudo_html, "html")
+        message.attach(parte_html)
+        
+        # Tentar enviar o email primeiro com smtplib
+        try:
+            with smtplib.SMTP(smtp_server, smtp_port) as server:
+                # Inicie TLS apenas se a porta for 587 ou 25
+                if smtp_port in [587, 25]:
+                    server.starttls()
+                server.login(smtp_username, smtp_password)
+                server.send_message(message)
+                print(f"Email HTML enviado com sucesso para {email}")
+                return True
+        except Exception as smtp_error:
+            print(f"Erro ao enviar email com smtplib: {str(smtp_error)}")
+            # Tentar com aiosmtplib como fallback
+            try:
+                if smtp_port == 465:
+                    async with aiosmtplib.SMTP(hostname=smtp_server, port=smtp_port, use_tls=True) as server:
+                        await server.login(smtp_username, smtp_password)
+                        await server.send_message(message)
+                else:
+                    async with aiosmtplib.SMTP(hostname=smtp_server, port=smtp_port) as server:
+                        await server.starttls()
+                        await server.login(smtp_username, smtp_password)
+                        await server.send_message(message)
+                print(f"Email HTML enviado com sucesso para {email} (via aiosmtplib)")
+                return True
+            except Exception as async_error:
+                print(f"Erro ao enviar email com aiosmtplib: {str(async_error)}")
+                raise
+                
+    except Exception as e:
+        print(f"Erro ao enviar email HTML para {email}: {str(e)}")
+        return False
 
 # Cria uma instância do serviço de email
 email_service = EmailService()

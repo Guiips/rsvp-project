@@ -19,6 +19,7 @@ from config.secrets import SECRET_KEY, ALGORITHM
 from fastapi import HTTPException, Request
 from config.database import get_database
 from routes.auth import get_current_user
+from fastapi import APIRouter, File, UploadFile, HTTPException, Depends, Request, Body, Form
 
 # Middleware de autenticação
 class AuthMiddleware(BaseHTTPMiddleware):

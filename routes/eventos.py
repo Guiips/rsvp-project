@@ -1,10 +1,10 @@
 from typing import List
-from fastapi import APIRouter, File, UploadFile, HTTPException, Depends, Request, Body
+from fastapi import APIRouter, File, UploadFile, HTTPException, Depends, Request, Body, Form
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.templating import Jinja2Templates
 from models.evento import Evento, Convidado, StatusConvidado, EventoUpdate
 from config.database import obter_db, get_database
-from services.email_service import email_service
+from services.email_service import email_service, EmailService
 from bson import ObjectId
 from datetime import datetime
 import io
@@ -87,6 +87,7 @@ async def adicionar_convidado(request: Request, evento_id: str, convidado: Convi
 
         # Gera os links de confirmação com tokens JWT
         try:
+            # Use email_service (instância) em vez de EmailService (classe)
             link_confirmacao, link_recusa = email_service.gerar_tokens_para_evento(
                 evento_id=evento_id,
                 email_convidado=convidado.email,
@@ -132,6 +133,19 @@ async def adicionar_convidado(request: Request, evento_id: str, convidado: Convi
 @eventos_router.post("/{evento_id}/convidados/importar")
 async def importar_convidados(request: Request, evento_id: str, file: UploadFile = File(...)):
     """Importa lista de convidados de um arquivo Excel"""
+    # Determina se deve enviar emails com base em um parâmetro opcional na URL
+    enviar_emails = False  # Por padrão, não envia emails
+    
+    # Tenta obter o parâmetro da query string, se existir
+    try:
+        query_params = dict(request.query_params)
+        enviar_emails_str = query_params.get('enviar_emails', 'false').lower()
+        enviar_emails = enviar_emails_str == 'true'
+    except:
+        # Se houver erro, não envia emails
+        enviar_emails = False
+
+    
     db = obter_db()
     try:
         # Verifica se o arquivo foi enviado
@@ -169,58 +183,75 @@ async def importar_convidados(request: Request, evento_id: str, file: UploadFile
         base_url = str(request.base_url).rstrip('/')
         convidados = []
         erros_email = []
+        
+        # Adicione contadores
+        total_registros = 0
+        registros_completos = 0
+        registros_incompletos = 0
+
 
         # Processar linhas do Excel
         for row in worksheet.iter_rows(min_row=2, values_only=True):
-            # Pula linhas sem dados suficientes
-            if not row or len(row) < 2 or not row[0] or not row[1]:
-                continue
+            # Verifica se temos pelo menos uma célula com dados
+            if not row or all(cell is None or str(cell).strip() == '' for cell in row):
+                continue  # Pula linhas completamente vazias
 
-            nome = str(row[0]).strip()
-            email = str(row[1]).strip()
-            telefone = str(row[2]).strip() if len(row) > 2 and row[2] else None
+            total_registros += 1
 
-            # Validações básicas
-            if not nome or not email:
-                print(f"Linha inválida: {row}")
-                continue
+            # Obtém os dados, com valores padrão para campos vazios
+            nome = str(row[0]).strip() if row[0] and str(row[0]).strip() else "Sem nome"
+            email = str(row[1]).strip() if len(row) > 1 and row[1] and str(row[1]).strip() else "Sem email"
+            telefone = str(row[2]).strip() if len(row) > 2 and row[2] and str(row[2]).strip() else "Sem telefone"
+            observacoes = str(row[3]).strip() if len(row) > 3 and row[3] and str(row[3]).strip() else "Sem observações"
 
-            # Gera os links de confirmação com tokens JWT
-            try:
-                link_confirmacao, link_recusa = email_service.gerar_tokens_para_evento(
-                    evento_id=evento_id,
-                    email_convidado=email,
-                    base_url=base_url
-                )
-            except Exception as token_error:
-                print(f"Erro ao gerar tokens para {email}: {str(token_error)}")
-                # Fallback para o método antigo caso a função não esteja disponível
-                link_confirmacao = f"{base_url}/api/eventos/confirmar-presenca/{evento_id}/{email}/sim"
-                link_recusa = f"{base_url}/api/eventos/confirmar-presenca/{evento_id}/{email}/nao"
+            # Verifica se todos os campos essenciais estão preenchidos
+            if nome != "Sem nome" and email != "Sem email" and '@' in email:
+                registros_completos += 1
+            else:
+                registros_incompletos += 1
 
+            # Não pula a linha mesmo se nome ou email estiverem vazios
             convidado = {
                 'nome': nome,
                 'email': email,
                 'telefone': telefone,
+                'observacoes': observacoes,
                 'status': StatusConvidado.PENDENTE
             }
+
             convidados.append(convidado)
 
-            # Tenta enviar o email
-            try:
-                await email_service.enviar_email_confirmacao(
-                    email=email,
-                    nome=nome,
-                    evento_nome=evento['nome'],
-                    evento_data=evento['data'],
-                    evento_hora=evento['hora'],
-                    evento_local=evento['local'],
-                    link_confirmacao=link_confirmacao,
-                    link_recusa=link_recusa
-                )
-            except Exception as email_error:
-                print(f"Erro ao enviar email para {email}: {str(email_error)}")
-                erros_email.append(email)
+            # Só tenta enviar email se tiver um email válido e a opção estiver ativada
+            if enviar_emails and email != "Sem email" and '@' in email:
+                try:
+                    # Gera os links de confirmação com tokens JWT
+                    try:
+                        # Use email_service (instância) em vez de EmailService (classe)
+                        link_confirmacao, link_recusa = email_service.gerar_tokens_para_evento(
+                            evento_id=evento_id,
+                            email_convidado=email,
+                            base_url=base_url
+                        )
+                    except Exception as token_error:
+                        print(f"Erro ao gerar tokens para {email}: {str(token_error)}")
+                        # Fallback para o método antigo
+                        link_confirmacao = f"{base_url}/api/eventos/confirmar-presenca/{evento_id}/{email}/sim"
+                        link_recusa = f"{base_url}/api/eventos/confirmar-presenca/{evento_id}/{email}/nao"
+                    
+                    # Envia o email
+                    await email_service.enviar_email_confirmacao(
+                        email=email,
+                        nome=nome,
+                        evento_nome=evento['nome'],
+                        evento_data=evento['data'],
+                        evento_hora=evento['hora'],
+                        evento_local=evento['local'],
+                        link_confirmacao=link_confirmacao,
+                        link_recusa=link_recusa
+                    )
+                except Exception as email_error:
+                    print(f"Erro ao enviar email para {email}: {str(email_error)}")
+                    erros_email.append(email)
 
         # Atualiza o evento com todos os convidados
         if convidados:
@@ -232,7 +263,11 @@ async def importar_convidados(request: Request, evento_id: str, file: UploadFile
         return {
             "convidados": convidados,
             "total_importados": len(convidados),
-            "erros_email": erros_email
+            "total_registros": total_registros,
+            "registros_completos": registros_completos,
+            "registros_incompletos": registros_incompletos,
+            "erros_email": erros_email,
+            "emails_enviados": enviar_emails
         }
 
     except HTTPException:
@@ -324,6 +359,7 @@ async def enviar_email_convidado(
         
         # Gera os links de confirmação com tokens JWT
         try:
+            # Use email_service (instância) em vez de EmailService (classe)
             link_confirmacao, link_recusa = email_service.gerar_tokens_para_evento(
                 evento_id=evento_id,
                 email_convidado=dados['email'],
@@ -388,11 +424,12 @@ async def enviar_emails_convidados(request: Request, evento_id: str):
                 email = convidado.get('email')
                 nome = convidado.get('nome')
                 
-                if not email or not nome:
+                if not email or not nome or email == "Sem email" or '@' not in email:
                     continue
                 
                 # Gera os links de confirmação
                 try:
+                    # Use email_service (instância) em vez de EmailService (classe)
                     link_confirmacao, link_recusa = email_service.gerar_tokens_para_evento(
                         evento_id=evento_id,
                         email_convidado=email,
@@ -646,6 +683,92 @@ async def excluir_convidado(
     
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+    
+    
+@eventos_router.post("/{evento_id}/convidados/enviar-emails-template")
+async def enviar_emails_com_template(
+    request: Request,
+    evento_id: str,
+    dados: dict = Body(...)
+):
+    """Envia emails para todos os convidados usando um template personalizado"""
+    db = obter_db()
+    try:
+        object_id = ObjectId(evento_id)
+        evento = await db.eventos.find_one({"_id": object_id})
+        
+        if not evento:
+            raise HTTPException(status_code=404, detail="Evento não encontrado")
+        
+        convidados = evento.get('convidados', [])
+        
+        if not convidados:
+            return {"mensagem": "Não há convidados para enviar emails."}
+        
+        # Obtém o template do email
+        assunto = dados.get('assunto', f"Convite para {evento['nome']}")
+        corpo_template = dados.get('corpo', "")
+        
+        base_url = str(request.base_url).rstrip('/')
+        emails_enviados = 0
+        emails_com_erro = []
+        
+        for convidado in convidados:
+            try:
+                email = convidado.get('email')
+                nome = convidado.get('nome')
+                
+                if not email or not nome or email == "Sem email" or '@' not in email:
+                    continue
+                
+                # Gera os links de confirmação
+                try:
+                    # Use email_service (instância) em vez de EmailService (classe)
+                    link_confirmacao, link_recusa = email_service.gerar_tokens_para_evento(
+                        evento_id=evento_id,
+                        email_convidado=email,
+                        base_url=base_url
+                    )
+                except Exception as token_error:
+                    print(f"Erro ao gerar tokens para {email}: {str(token_error)}")
+                    # Fallback para o método antigo
+                    link_confirmacao = f"{base_url}/api/eventos/confirmar-presenca/{evento_id}/{email}/sim"
+                    link_recusa = f"{base_url}/api/eventos/confirmar-presenca/{evento_id}/{email}/nao"
+                
+                # Personaliza o email para este convidado
+                corpo_email = corpo_template
+                corpo_email = corpo_email.replace("[Nome do Convidado]", nome)
+                corpo_email = corpo_email.replace("[Link de Confirmação]", link_confirmacao)
+                corpo_email = corpo_email.replace("[Link de Recusa]", link_recusa)
+                
+                # Envia o email
+                try:
+                    # Use email_service (instância) em vez de EmailService (classe)
+                    await email_service.enviar_email_html(
+                        email=email,
+                        assunto=assunto,
+                        conteudo_html=corpo_email
+                    )
+                    
+                    emails_enviados += 1
+                except Exception as send_error:
+                    print(f"Erro ao enviar email para {email}: {str(send_error)}")
+                    emails_com_erro.append(email)
+            except Exception as convidado_error:
+                print(f"Erro ao processar convidado: {str(convidado_error)}")
+                if 'email' in locals():
+                    emails_com_erro.append(email)
+        
+        return {
+            "mensagem": f"Emails enviados com sucesso: {emails_enviados}",
+            "total_enviados": emails_enviados,
+            "total_erros": len(emails_com_erro),
+            "emails_com_erro": emails_com_erro
+        }
+        
+    except Exception as e:
+        print(f"Erro ao enviar emails: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @eventos_router.patch("/{evento_id}")
@@ -671,6 +794,45 @@ async def atualizar_evento(evento_id: str, evento_update: EventoUpdate):
     
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+    
+@eventos_router.post("/salvar-observacoes/{evento_id}/{email}")
+async def salvar_observacoes(
+    request: Request,
+    evento_id: str,
+    email: str,
+    observacoes: str = Form(..., description="Observações do convidado")
+):
+    """Salva observações de um convidado que confirmou presença"""
+    db = obter_db()
+    try:
+        object_id = ObjectId(evento_id)
+        
+        # Atualiza as observações do convidado
+        resultado = await db.eventos.update_one(
+            {
+                "_id": object_id,
+                "convidados.email": email
+            },
+            {
+                "$set": {
+                    "convidados.$.observacoes": observacoes,
+                    "convidados.$.data_observacoes": datetime.utcnow()
+                }
+            }
+        )
+        
+        if resultado.modified_count == 0:
+            raise HTTPException(status_code=404, detail="Convidado não encontrado")
+        
+        # Redireciona para uma página de agradecimento
+        return templates.TemplateResponse("agradecimento.html", {
+            "request": request,
+            "mensagem": "Suas observações foram salvas com sucesso!"
+        })
+        
+    except Exception as e:
+        print(f"Erro ao salvar observações: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))    
     
     
 @eventos_router.post("/{evento_id}/convidados/observacoes")
@@ -704,3 +866,51 @@ async def adicionar_observacoes(
     
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+@eventos_router.post("/{evento_id}/convidados/motivo-recusa/{email}")
+async def salvar_motivo_recusa(
+    request: Request,
+    evento_id: str,
+    email: str,
+    motivo: str = Form(None)  # Tornando opcional
+):
+    """Salva o motivo da recusa de um convidado"""
+    db = obter_db()
+    try:
+        object_id = ObjectId(evento_id)
+        
+        # Atualiza o motivo de recusa do convidado
+        update_data = {"convidados.$.data_motivo": datetime.utcnow()}
+        
+        # Só adiciona o motivo se não for None ou vazio
+        if motivo:
+            update_data["convidados.$.motivo_recusa"] = motivo
+        
+        resultado = await db.eventos.update_one(
+            {
+                "_id": object_id,
+                "convidados.email": email
+            },
+            {
+                "$set": update_data
+            }
+        )
+        
+        if resultado.modified_count == 0:
+            return templates.TemplateResponse("confirmacao_erro.html", {
+                "request": request,
+                "mensagem": "Convidado não encontrado."
+            })
+        
+        # Renderiza página de agradecimento
+        return templates.TemplateResponse("agradecimento.html", {
+            "request": request,
+            "mensagem": "Agradecemos pelo seu feedback!"
+        })
+        
+    except Exception as e:
+        print(f"Erro ao salvar motivo de recusa: {str(e)}")
+        return templates.TemplateResponse("confirmacao_erro.html", {
+            "request": request,
+            "mensagem": f"Erro ao processar: {str(e)}"
+        })

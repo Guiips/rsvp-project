@@ -867,14 +867,15 @@ async def adicionar_observacoes(
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-@eventos_router.post("/{evento_id}/convidados/motivo-recusa/{email}")
-async def salvar_motivo_recusa(
+# Rota pública para salvar motivo de recusa (sem autenticação)
+@eventos_router.post("/{evento_id}/convidados/motivo-recusa/{email}", include_in_schema=True)
+async def salvar_motivo_recusa_publico(
     request: Request,
     evento_id: str,
     email: str,
-    motivo: str = Form(None)  # Tornando opcional
+    motivo: str = Form(None)
 ):
-    """Salva o motivo da recusa de um convidado"""
+    """Rota pública para salvar o motivo da recusa de um convidado"""
     db = obter_db()
     try:
         object_id = ObjectId(evento_id)
@@ -897,20 +898,69 @@ async def salvar_motivo_recusa(
         )
         
         if resultado.modified_count == 0:
-            return templates.TemplateResponse("confirmacao_erro.html", {
+            return templates.TemplateResponse("confirmacao_publica_erro.html", {
                 "request": request,
-                "mensagem": "Convidado não encontrado."
+                "mensagem": "Não foi possível registrar sua resposta."
             })
         
-        # Renderiza página de agradecimento
-        return templates.TemplateResponse("agradecimento.html", {
+        # Renderiza página de agradecimento simplificada
+        return templates.TemplateResponse("confirmacao_publica_agradecimento.html", {
             "request": request,
             "mensagem": "Agradecemos pelo seu feedback!"
         })
         
     except Exception as e:
         print(f"Erro ao salvar motivo de recusa: {str(e)}")
-        return templates.TemplateResponse("confirmacao_erro.html", {
+        return templates.TemplateResponse("confirmacao_publica_erro.html", {
             "request": request,
-            "mensagem": f"Erro ao processar: {str(e)}"
+            "mensagem": "Ocorreu um erro ao processar sua resposta."
+        })
+
+# Rota pública para salvar observações (sem autenticação)
+@eventos_router.post("/{evento_id}/convidados/observacoes/{email}", include_in_schema=True)
+async def salvar_observacoes_publico(
+    request: Request,
+    evento_id: str,
+    email: str,
+    observacoes: str = Form(None)
+):
+    """Rota pública para salvar observações de um convidado"""
+    db = obter_db()
+    try:
+        object_id = ObjectId(evento_id)
+        
+        # Atualiza as observações do convidado
+        update_data = {"convidados.$.data_observacoes": datetime.utcnow()}
+        
+        # Só adiciona as observações se não for None ou vazio
+        if observacoes:
+            update_data["convidados.$.observacoes"] = observacoes
+        
+        resultado = await db.eventos.update_one(
+            {
+                "_id": object_id,
+                "convidados.email": email
+            },
+            {
+                "$set": update_data
+            }
+        )
+        
+        if resultado.modified_count == 0:
+            return templates.TemplateResponse("confirmacao_publica_erro.html", {
+                "request": request,
+                "mensagem": "Não foi possível registrar sua resposta."
+            })
+        
+        # Renderiza página de agradecimento simplificada
+        return templates.TemplateResponse("confirmacao_publica_agradecimento.html", {
+            "request": request,
+            "mensagem": "Suas observações foram salvas com sucesso!"
+        })
+        
+    except Exception as e:
+        print(f"Erro ao salvar observações: {str(e)}")
+        return templates.TemplateResponse("confirmacao_publica_erro.html", {
+            "request": request,
+            "mensagem": "Ocorreu um erro ao processar sua resposta."
         })

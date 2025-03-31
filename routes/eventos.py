@@ -917,14 +917,14 @@ async def salvar_motivo_recusa_publico(
         })
 
 # Rota pública para salvar observações (sem autenticação)
-@eventos_router.post("/{evento_id}/convidados/observacoes/{email}", include_in_schema=True)
+@eventos_router.post("/{evento_id}/convidados/observacoes/{email}")
 async def salvar_observacoes_publico(
     request: Request,
     evento_id: str,
     email: str,
     observacoes: str = Form(None)
 ):
-    """Rota pública para salvar observações de um convidado"""
+    """Salva observações de um convidado (endpoint público)"""
     db = obter_db()
     try:
         object_id = ObjectId(evento_id)

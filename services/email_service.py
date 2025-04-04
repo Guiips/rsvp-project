@@ -1,76 +1,81 @@
-import smtplib
-import aiosmtplib
+import sys
+import os
+
+current_dir = os.path.dirname(os.path.abspath(__file__))
+parent_dir = os.path.dirname(current_dir)
+sys.path.append(parent_dir)
+
+import logging
+import uuid
+import json
+import asyncio
 from email.mime.text import MIMEText
-from email.mime.multipart import MIMEMultipart
 from jose import jwt
 from datetime import datetime, timedelta
-import os
 from dotenv import load_dotenv
-from config.secrets import SECRET_KEY
+from bs4 import BeautifulSoup
+from mailjet_rest import Client
 
-# Carregar variáveis de ambiente
+# Carrega variáveis de ambiente
 load_dotenv()
 
-# Configurações de email do .env
-SMTP_SERVER = os.getenv('MAIL_SERVER', 'smtp.gmail.com')
-SMTP_PORT = int(os.getenv('MAIL_PORT', 587))
-SMTP_USERNAME = os.getenv('MAIL_USERNAME')
-SMTP_PASSWORD = os.getenv('MAIL_PASSWORD')
-SENDER_EMAIL = os.getenv('MAIL_FROM')
+# Importar secreto
+from config.secrets import SECRET_KEY
 
-# URL base do site
-BASE_URL = "https://rsvpcodevents.online"
+# Configurações de email
+SENDER_EMAIL = os.getenv('SENDER_EMAIL', 'eventos@cod.events')
+SENDER_NAME = os.getenv('SENDER_NAME', 'Code Events')
+BASE_URL = os.getenv('BASE_URL', 'https://cod.events')
+
+# Configurações Mailjet
+MAILJET_API_KEY = os.getenv('MAILJET_API_KEY', '')
+MAILJET_API_SECRET = os.getenv('MAILJET_API_SECRET', '')
+
+# Configuração de logging
+logging.basicConfig(
+    level=logging.DEBUG,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    filename='email_logs.txt',
+    filemode='a'
+)
+logger = logging.getLogger(__name__)
 
 class EmailService:
-    @staticmethod
-    def gerar_token_confirmacao(evento_id, email_convidado, acao='confirmar'):
-        """
-        Gera um token JWT para confirmação ou recusa de convite
-        """
-        try:
-            # Token expira em 7 dias
-            expiracao = datetime.utcnow() + timedelta(days=7)
-            
-            payload = {
-                "evento_id": str(evento_id),
-                "email": email_convidado,
-                "acao": acao,
-                "exp": expiracao
-            }
-            
-            print(f"Gerando token para evento_id={evento_id}, email={email_convidado}, acao={acao}")
-            token = jwt.encode(payload, SECRET_KEY, algorithm="HS256")
-            return token
-        except Exception as e:
-            print(f"Erro ao gerar token de confirmação: {e}")
-            return None
+    def __init__(self):
+        self.mailjet = Client(auth=(MAILJET_API_KEY, MAILJET_API_SECRET), version='v3.1')
         
-    
     def gerar_tokens_para_evento(self, evento_id, email_convidado, base_url=None):
         """
-        Gera tokens JWT e links completos para confirmação e recusa de presença
+        Gera tokens JWT com segurança adicional
         """
-        if base_url is None:
+        # Usar BASE_URL global se nenhum for fornecido
+        if not base_url:
             base_url = BASE_URL
             
-        # Token para confirmar presença
+        # Adicionar mais aleatoriedade ao token
+        token_id = str(uuid.uuid4())
+        
+        # Token com informações adicionais
         token_confirmacao = jwt.encode(
             {
+                'jti': token_id,  # ID único do token
                 'evento_id': evento_id,
                 'email': email_convidado,
                 'acao': 'confirmar',
+                'origem': 'sistema_rsvp',
                 'exp': datetime.utcnow() + timedelta(days=30)
             },
             SECRET_KEY,
             algorithm='HS256'
         )
         
-        # Token para recusar presença
         token_recusa = jwt.encode(
             {
+                'jti': token_id,
                 'evento_id': evento_id,
                 'email': email_convidado,
                 'acao': 'recusar',
+                'origem': 'sistema_rsvp',
                 'exp': datetime.utcnow() + timedelta(days=30)
             },
             SECRET_KEY,
@@ -83,446 +88,286 @@ class EmailService:
         
         return link_confirmacao, link_recusa
 
-    async def enviar_email_html(self, email, assunto, conteudo_html):
+    async def enviar_email_html(self, email, assunto, conteudo_html, categorias=None):
         """
-        Envia um email com conteúdo HTML
+        Envio de email usando Mailjet com configurações anti-spam otimizadas
         """
         try:
-            # Usar as configurações do .env
-            smtp_server = SMTP_SERVER
-            smtp_port = SMTP_PORT
-            smtp_username = SMTP_USERNAME
-            smtp_password = SMTP_PASSWORD
+            logger.info(f"Preparando email para {email} com assunto: {assunto}")
             
-            print(f"Enviando email HTML para {email} usando servidor {smtp_server}:{smtp_port}")
-            
-            # Criar a mensagem de email
-            message = MIMEMultipart("alternative")
-            message["Subject"] = assunto
-            message["From"] = SENDER_EMAIL or smtp_username
-            message["To"] = email
-            
-            # Anexar a parte HTML à mensagem
-            parte_html = MIMEText(conteudo_html, "html")
-            message.attach(parte_html)
-            
-            # Tentar enviar o email primeiro com smtplib
+            # Criar versão texto plano do conteúdo HTML
             try:
-                with smtplib.SMTP(smtp_server, smtp_port) as server:
-                    # Inicie TLS apenas se a porta for 587 ou 25
-                    if smtp_port in [587, 25]:
-                        server.starttls()
-                    server.login(smtp_username, smtp_password)
-                    server.send_message(message)
-                    print(f"Email HTML enviado com sucesso para {email}")
-                    return True
-            except Exception as smtp_error:
-                print(f"Erro ao enviar email com smtplib: {str(smtp_error)}")
-                # Tentar com aiosmtplib como fallback
-                try:
-                    if smtp_port == 465:
-                        async with aiosmtplib.SMTP(hostname=smtp_server, port=smtp_port, use_tls=True) as server:
-                            await server.login(smtp_username, smtp_password)
-                            await server.send_message(message)
-                    else:
-                        async with aiosmtplib.SMTP(hostname=smtp_server, port=smtp_port) as server:
-                            await server.starttls()
-                            await server.login(smtp_username, smtp_password)
-                            await server.send_message(message)
-                    print(f"Email HTML enviado com sucesso para {email} (via aiosmtplib)")
-                    return True
-                except Exception as async_error:
-                    print(f"Erro ao enviar email com aiosmtplib: {str(async_error)}")
-                    raise
-                    
+                texto_plano = BeautifulSoup(conteudo_html, 'html.parser').get_text()
+            except Exception as text_error:
+                logger.warning(f"Erro ao criar versão texto: {text_error}")
+                texto_plano = "Por favor, visualize este email em um cliente que suporta HTML."
+            
+            # ID de rastreamento único para este email
+            tracking_id = str(uuid.uuid4())
+            
+            # Preparar categorias para tags Mailjet
+            tags = []
+            if categorias:
+                tags = categorias[:5]  # Mailjet permite até 5 tags
+            
+            # Configurar payload para Mailjet
+            data = {
+                'Messages': [
+                    {
+                        'From': {
+                            'Email': SENDER_EMAIL,
+                            'Name': SENDER_NAME
+                        },
+                        'To': [
+                            {
+                                'Email': email
+                            }
+                        ],
+                        'Subject': assunto,
+                        'TextPart': texto_plano,
+                        'HTMLPart': conteudo_html,
+                        'CustomID': tracking_id,
+                        'Headers': {
+                            'X-MJ-CustomID': tracking_id,
+                            'X-MJ-EventPayload': 'custom_payload',
+                            'X-Mailjet-TrackOpen': '1',
+                            'X-Mailjet-TrackClick': '1'
+                        },
+                        'TrackOpens': 'enabled',
+                        'TrackClicks': 'enabled',
+                        'CustomCampaign': 'code_events'
+                    }
+                ]
+            }
+            
+            # Adicionar tags se existirem
+            if tags:
+                data['Messages'][0]['Tags'] = tags
+            
+            # Enviar email via Mailjet API
+            logger.info(f"Enviando email via Mailjet para {email}")
+            response = self.mailjet.send.create(data=data)
+            
+            # Verificar resposta da API
+            status_code = response.status_code
+            response_data = response.json()
+            
+            if status_code == 200:
+                logger.info(f"Email enviado com sucesso para {email}. Tracking ID: {tracking_id}")
+                logger.debug(f"Resposta Mailjet: {json.dumps(response_data)}")
+                return True
+            else:
+                logger.error(f"Erro ao enviar email. Código: {status_code}")
+                logger.error(f"Detalhes: {json.dumps(response_data)}")
+                return False
+                
         except Exception as e:
-            print(f"Erro ao enviar email HTML para {email}: {str(e)}")
+            logger.error(f"Erro no envio de email: {str(e)}")
             return False
+
+    async def enviar_email_confirmacao(self, email, nome, evento_nome, evento_data, 
+                                     evento_hora, evento_local, link_confirmacao, link_recusa):
+        """
+        Envia email de confirmação com template otimizado
+        """
+        assunto = f"Convite para {evento_nome} - Confirmação de Presença"
         
-    @staticmethod
-    async def enviar_email_confirmacao(
-            email, nome, evento_nome, evento_data, evento_hora, evento_local,
-            link_confirmacao=None, link_recusa=None
-    ):
+        # Template com design responsivo
+        conteudo_html = self.gerar_template_email(
+            nome=nome,
+            evento_nome=evento_nome,
+            evento_data=evento_data,
+            evento_hora=evento_hora,
+            evento_local=evento_local,
+            link_confirmacao=link_confirmacao,
+            link_recusa=link_recusa
+        )
+        
+        # Categorias para rastreamento e organização
+        categorias = ["convite", "rsvp", evento_nome.lower().replace(" ", "_")]
+        
+        return await self.enviar_email_html(email, assunto, conteudo_html, categorias=categorias)
+
+    def gerar_template_email(self, **kwargs):
         """
-        Função para enviar email de confirmação com links para confirmar ou recusar presença no evento.
+        Template de email responsivo e otimizado
         """
-        try:
-            # Usar as configurações do .env
-            smtp_server = SMTP_SERVER
-            smtp_port = SMTP_PORT
-            smtp_username = SMTP_USERNAME
-            smtp_password = SMTP_PASSWORD
-            
-            print(f"Enviando email para {email} usando servidor {smtp_server}:{smtp_port}")
-            
-            # Criar a mensagem de email
-            message = MIMEMultipart("alternative")
-            message["Subject"] = f"Convite para o evento: {evento_nome}"
-            message["From"] = SENDER_EMAIL or smtp_username
-            message["To"] = email
-            
-            # Texto do email
-            text = f"""
-            Olá {nome},
-            
-            Você foi convidado para o evento {evento_nome}.
-            
-            Data: {evento_data}
-            Hora: {evento_hora}
-            Local: {evento_local}
-            
-            Para confirmar sua presença, acesse o link:
-            {link_confirmacao}
-            
-            Para recusar o convite, acesse o link:
-            {link_recusa}
-            
-            Após confirmar ou recusar sua presença, você poderá adicionar observações importantes como:
-            - Restrições alimentares
-            - Necessidades especiais
-            - Outras informações relevantes
-            
-            Atenciosamente,
-            Equipe de Eventos
-            """
-            
-            # Versão HTML do email
-            html = f"""
+        return f"""<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+    <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+    <title>Convite para {kwargs.get('evento_nome', 'Evento')}</title>
+    <style type="text/css">
+        body, table, td, a {{ font-family: Arial, sans-serif; }}
+        table {{ border-collapse: collapse; }}
+        img {{ max-width: 100%; height: auto; border: 0; outline: none; text-decoration: none; }}
+        h1, h2, h3, h4, h5, h6 {{ margin-top: 0; margin-bottom: 0; font-weight: bold; color: #333333; }}
+        p {{ margin-top: 0; margin-bottom: 0; color: #333333; }}
+        @media only screen and (max-width: 600px) {{
+            .container {{ width: 100% !important; }}
+            .mobile-padding {{ padding-left: 10px !important; padding-right: 10px !important; }}
+            .full-width {{ width: 100% !important; }}
+            .mobile-button {{ width: 100% !important; display: block !important; }}
+            .mobile-center {{ text-align: center !important; }}
+        }}
+    </style>
+</head>
+<body style="margin: 0; padding: 0; background-color: #f7f7f7; -webkit-font-smoothing: antialiased; -webkit-text-size-adjust: none; width: 100%; font-family: Arial, sans-serif;">
+    <table border="0" cellpadding="0" cellspacing="0" width="100%" style="background-color: #f7f7f7;">
+        <tr>
+            <td align="center" style="padding: 20px 0px;">
+                <!-- Preheader Text (não visível no email, mas ajuda com filtros de spam) -->
+                <div style="display:none;font-size:1px;color:#ffffff;line-height:1px;max-height:0px;max-width:0px;opacity:0;overflow:hidden;">
+                    Você foi convidado para {kwargs.get('evento_nome', 'Evento')} no dia {kwargs.get('evento_data', '04/06/2025')}. Por favor, confirme sua presença.
+                </div>
+                
+                <table border="0" cellpadding="0" cellspacing="0" width="600" class="container" style="background-color: #ffffff; border: 1px solid #e0e0e0; border-radius: 6px; box-shadow: 0 2px 8px rgba(0,0,0,0.05);">
+                    <!-- Logo Header -->
+                    <tr>
+                        <td align="center" bgcolor="#ffffff" style="padding: 20px 0 0 0;">
+                            <h2 style="color: #1976D2; margin: 0; font-size: 22px; font-weight: bold;">CODE EVENTS</h2>
+                        </td>
+                    </tr>
+                    
+                    <!-- Cabeçalho -->
+                    <tr>
+                        <td align="center" bgcolor="#1976D2" style="padding: 30px 20px; border-radius: 0 0 4px 4px;">
+                            <h1 style="color: #ffffff; margin: 0; font-size: 24px; font-weight: bold;">Convite Oficial</h1>
+                        </td>
+                    </tr>
+                    
+                    <!-- Conteúdo -->
+                    <tr>
+                        <td class="mobile-padding" style="padding: 40px 30px 20px 30px;">
+                            <p style="margin-top: 0; font-size: 16px; line-height: 1.5; color: #333333;">Olá, <strong>{kwargs.get('nome', 'Convidado')}</strong>,</p>
+                            
+                            <p style="margin: 15px 0; font-size: 16px; line-height: 1.5; color: #333333;">Temos o prazer de convidá-lo para o <strong>{kwargs.get('evento_nome', 'Evento')}</strong>.</p>
+                            
+                            <!-- Detalhes do evento -->
+                            <table border="0" cellpadding="0" cellspacing="0" width="100%" style="background-color: #f5f5f5; margin: 25px 0; border-left: 4px solid #1976D2; border-radius: 4px;">
+                                <tr>
+                                    <td colspan="2" style="padding: 15px 20px 5px 20px;">
+                                        <h3 style="margin: 0; color: #1976D2; font-size: 18px;">Detalhes do Evento</h3>
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <td width="100" style="padding: 10px 0 10px 20px;"><strong>Data:</strong></td>
+                                    <td style="padding: 10px 20px 10px 0;">{kwargs.get('evento_data', '04/06/2025')}</td>
+                                </tr>
+                                <tr>
+                                    <td width="100" style="padding: 10px 0 10px 20px;"><strong>Horário:</strong></td>
+                                    <td style="padding: 10px 20px 10px 0;">{kwargs.get('evento_hora', '06:00')}</td>
+                                </tr>
+                                <tr>
+                                    <td width="100" style="padding: 10px 0 10px 20px;"><strong>Local:</strong></td>
+                                    <td style="padding: 10px 20px 10px 0;">{kwargs.get('evento_local', 'Casa')}</td>
+                                </tr>
+                            </table>
+                            
+                            <p style="margin: 25px 0; font-size: 16px; line-height: 1.5; color: #333333; text-align: center;">Por gentileza, confirme sua presença clicando em um dos botões abaixo:</p>
+                            
+                            <!-- Botões -->
+                            <table border="0" cellpadding="0" cellspacing="0" width="100%" style="margin: 30px 0;">
+                                <tr>
+                                    <td align="center">
+                                        <table border="0" cellpadding="0" cellspacing="0" class="mobile-full-width">
+                                            <tr>
+                                                <td align="center" bgcolor="#4CAF50" class="mobile-button" style="border-radius: 4px; padding: 0px;">
+                                                    <a href="{kwargs.get('link_confirmacao', '#')}" target="_blank" style="color: #ffffff; text-decoration: none; display: inline-block; font-weight: bold; font-size: 16px; padding: 15px 25px; border-radius: 4px; background-color: #4CAF50; width: 200px; text-align: center;">
+                                                        Confirmar Presença
+                                                    </a>
+                                                </td>
+                                                <td width="20" class="mobile-hidden"> </td>
+                                                <td align="center" bgcolor="#f44336" class="mobile-button" style="border-radius: 4px; padding: 0px;">
+                                                    <a href="{kwargs.get('link_recusa', '#')}" target="_blank" style="color: #ffffff; text-decoration: none; display: inline-block; font-weight: bold; font-size: 16px; padding: 15px 25px; border-radius: 4px; background-color: #f44336; width: 200px; text-align: center;">
+                                                        Não Poderei Comparecer
+                                                    </a>
+                                                </td>
+                                            </tr>
+                                        </table>
+                                    </td>
+                                </tr>
+                            </table>
+                            
+                            <p style="margin-top: 30px; font-size: 16px; line-height: 1.5; color: #333333;">Agradecemos sua atenção e esperamos contar com sua presença!</p>
+                            
+                            <p style="margin-top: 25px; font-size: 16px; line-height: 1.5; color: #333333;">Atenciosamente,<br />
+                            <strong>Equipe Code Events</strong></p>
+                        </td>
+                    </tr>
+                    
+                    <!-- Rodapé -->
+                    <tr>
+                        <td bgcolor="#f5f5f5" style="padding: 20px; text-align: center; color: #757575; font-size: 13px; border-radius: 0 0 4px 4px;">
+                            <p style="margin: 0;">Este é um e-mail automático. Por favor, não responda diretamente a esta mensagem.</p>
+                            <p style="margin-top: 10px; font-size: 12px;">
+                                <a href="#" style="color: #757575; text-decoration: underline;">Cancelar inscrição</a>
+                            </p>
+                            <p style="margin-top: 10px; font-size: 12px; color: #9e9e9e;">
+                                © 2025 Code Events. Todos os direitos reservados.
+                            </p>
+                        </td>
+                    </tr>
+                </table>
+            </td>
+        </tr>
+    </table>
+</body>
+</html>
+"""
+
+# Cria uma instância global do serviço de email
+email_service = EmailService()
+
+# Teste quando executado diretamente
+if __name__ == "__main__":
+    async def teste_envio():
+        # Teste de envio de email com Mailjet
+        resultado = await email_service.enviar_email_html(
+            email='seu-email@exemplo.com',  # Substitua por seu email real para teste
+            assunto='Teste de Email Code Events com Mailjet',
+            conteudo_html="""
+            <!DOCTYPE html>
             <html>
             <head>
-                <style>
-                    body {{ 
-                        font-family: 'Segoe UI', Arial, sans-serif;
-                        line-height: 1.6;
-                        color: #333;
-                        margin: 0;
-                        padding: 0;
-                    }}
-                    .container {{ 
-                        max-width: 600px;
-                        margin: 0 auto;
-                        padding: 20px;
-                    }}
-                    .header {{ 
-                        text-align: center;
-                        padding: 20px;
-                        background-color: #f8f9fa;
-                        border-radius: 8px;
-                        margin-bottom: 20px;
-                    }}
-                    .event-title {{
-                        color: #1a73e8;
-                        font-size: 24px;
-                        margin-bottom: 10px;
-                    }}
-                    .details {{ 
-                        background-color: #f8f9fa;
-                        padding: 20px;
-                        border-radius: 8px;
-                        margin: 20px 0;
-                    }}
-                    .button-container {{
-                        text-align: center;
-                        margin: 25px 0;
-                    }}
-                    .button {{ 
-                        display: inline-block;
-                        padding: 12px 24px;
-                        margin: 10px;
-                        text-decoration: none;
-                        border-radius: 50px;
-                        font-weight: 500;
-                        transition: all 0.3s ease;
-                    }}
-                    .confirm {{ 
-                        background-color: #28a745;
-                        color: white;
-                    }}
-                    .confirm:hover {{
-                        background-color: #218838;
-                    }}
-                    .decline {{ 
-                        background-color: #dc3545;
-                        color: white;
-                    }}
-                    .decline:hover {{
-                        background-color: #c82333;
-                    }}
-                    .obs-section {{
-                        background-color: #e8f5e9;
-                        padding: 20px;
-                        border-radius: 8px;
-                        margin-top: 20px;
-                    }}
-                    .obs-title {{
-                        color: #2e7d32;
-                        font-size: 18px;
-                        margin-bottom: 10px;
-                    }}
-                    .obs-list {{
-                        margin: 10px 0;
-                        padding-left: 20px;
-                    }}
-                    .obs-list li {{
-                        margin: 5px 0;
-                        color: #1b5e20;
-                    }}
-                    .footer {{
-                        text-align: center;
-                        margin-top: 30px;
-                        padding-top: 20px;
-                        border-top: 1px solid #eee;
-                        color: #666;
-                    }}
-                </style>
+                <meta charset="UTF-8">
+                <meta name="viewport" content="width=device-width, initial-scale=1.0">
+                <title>Teste do Sistema de Emails</title>
             </head>
-            <body>
-                <div class="container">
-                    <div class="header">
-                        <h1 class="event-title">Convite para Evento</h1>
+            <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333; margin: 0; padding: 20px;">
+                <div style="max-width: 600px; margin: 0 auto; background-color: #fff; border-radius: 8px; overflow: hidden; box-shadow: 0 0 10px rgba(0,0,0,0.1);">
+                    <div style="background-color: #1976D2; color: white; padding: 20px; text-align: center;">
+                        <h1 style="margin: 0; font-size: 24px;">Teste de Envio com Mailjet</h1>
                     </div>
-                    
-                    <p>Olá <strong>{nome}</strong>,</p>
-                    
-                    <p>Você foi convidado para o evento <strong>{evento_nome}</strong>.</p>
-                    
-                    <div class="details">
-                        <p><strong>Data:</strong> {evento_data}</p>
-                        <p><strong>Hora:</strong> {evento_hora}</p>
-                        <p><strong>Local:</strong> {evento_local}</p>
+                    <div style="padding: 20px;">
+                        <p>Este é um email de teste do sistema Code Events usando Mailjet.</p>
+                        <p>Se você está recebendo este email, a configuração com Mailjet está funcionando corretamente.</p>
+                        <p>Agora você pode enviar emails de maneira confiável e eficiente para seus usuários!</p>
+                        <div style="margin: 25px 0; padding: 15px; background-color: #f5f5f5; border-left: 4px solid #1976D2; border-radius: 4px;">
+                            <strong>Benefícios do Mailjet:</strong>
+                            <ul style="margin-top: 10px; padding-left: 20px;">
+                                <li>Alta taxa de entrega</li>
+                                <li>Baixas chances de cair em spam</li>
+                                <li>Analytics detalhados</li>
+                                <li>Escalabilidade</li>
+                            </ul>
+                        </div>
+                        <p>Este email foi enviado às {datetime.now().strftime('%H:%M:%S')} em {datetime.now().strftime('%d/%m/%Y')}.</p>
                     </div>
-                    
-                    <div class="button-container">
-                        <a href="{link_confirmacao}" class="button confirm">Confirmar Presença</a>
-                        <a href="{link_recusa}" class="button decline">Recusar Convite</a>
-                    </div>
-
-                    <div class="obs-section">
-                        <h2 class="obs-title">Informações Adicionais</h2>
-                        <p>Após confirmar ou recusar sua presença, você poderá adicionar observações importantes como:</p>
-                        <ul class="obs-list">
-                            <li>Restrições alimentares</li>
-                            <li>Necessidades especiais</li>
-                            <li>Outras informações relevantes</li>
-                        </ul>
-                    </div>
-                    
-                    <div class="footer">
-                        <p>Atenciosamente,<br>Equipe de Eventos</p>
+                    <div style="background-color: #f5f5f5; padding: 15px; text-align: center; font-size: 12px; color: #666;">
+                        <p>© 2025 Code Events. Todos os direitos reservados.</p>
                     </div>
                 </div>
             </body>
             </html>
             """
-            
-            # Anexar partes à mensagem
-            part1 = MIMEText(text, "plain")
-            part2 = MIMEText(html, "html")
-            message.attach(part1)
-            message.attach(part2)
-            
-            # Tentar enviar o email primeiro com smtplib
-            try:
-                with smtplib.SMTP(smtp_server, smtp_port) as server:
-                    # Inicie TLS apenas se a porta for 587 ou 25
-                    if smtp_port in [587, 25]:
-                        server.starttls()
-                    server.login(smtp_username, smtp_password)
-                    server.send_message(message)
-                    print(f"Email enviado com sucesso para {email}")
-                    return True
-            except Exception as smtp_error:
-                print(f"Erro ao enviar email com smtplib: {str(smtp_error)}")
-                # Tentar com aiosmtplib como fallback
-                try:
-                    if smtp_port == 465:
-                        async with aiosmtplib.SMTP(hostname=smtp_server, port=smtp_port, use_tls=True) as server:
-                            await server.login(smtp_username, smtp_password)
-                            await server.send_message(message)
-                    else:
-                        async with aiosmtplib.SMTP(hostname=smtp_server, port=smtp_port) as server:
-                            await server.starttls()
-                            await server.login(smtp_username, smtp_password)
-                            await server.send_message(message)
-                    print(f"Email enviado com sucesso para {email} (via aiosmtplib)")
-                    return True
-                except Exception as async_error:
-                    print(f"Erro ao enviar email com aiosmtplib: {str(async_error)}")
-                    raise
-                    
-        except Exception as e:
-            print(f"Erro ao enviar email para {email}: {str(e)}")
-            return False
-            
-    # Na classe EmailService, método gerar_tokens_para_evento:
-
-def gerar_tokens_para_evento(self, evento_id, email_convidado, base_url=None):
-    """
-    Gera tokens JWT e links completos para confirmação e recusa de presença
+        )
+        
+        if resultado:
+            print("Email de teste enviado com sucesso!")
+        else:
+            print("Falha ao enviar email de teste!")
     
-    Args:
-        evento_id: ID do evento
-        email_convidado: Email do convidado
-        base_url: URL base para os links
-        
-    Returns:
-        tuple: (link_confirmacao, link_recusa)
-    """
-    if base_url is None:
-        base_url = BASE_URL
-        
-    # Token para confirmar presença
-    token_confirmacao = jwt.encode(
-        {
-            'evento_id': evento_id,
-            'email': email_convidado,
-            'acao': 'confirmar',
-            'exp': datetime.utcnow() + timedelta(days=30)
-        },
-        SECRET_KEY,
-        algorithm='HS256'
-    )
-    
-    # Token para recusar presença
-    token_recusa = jwt.encode(
-        {
-            'evento_id': evento_id,
-            'email': email_convidado,
-            'acao': 'recusar',
-            'exp': datetime.utcnow() + timedelta(days=30)
-        },
-        SECRET_KEY,
-        algorithm='HS256'
-    )
-    
-    # Criar links completos
-    link_confirmacao = f"{base_url}/api/eventos/confirmar/{token_confirmacao}"
-    link_recusa = f"{base_url}/api/eventos/recusar/{token_recusa}"
-    
-    return link_confirmacao, link_recusa
-
-async def enviar_email_html(self, email, assunto, conteudo_html):
-    """Envia um email com conteúdo HTML"""
-    try:
-        # Obter configurações
-        smtp_server = SMTP_SERVER
-        smtp_port = SMTP_PORT
-        smtp_username = SMTP_USERNAME
-        smtp_password = SMTP_PASSWORD
-        
-        print(f"Enviando email HTML para {email}")
-        
-        # Criar mensagem multi-part - IMPORTANTE para compatibilidade
-        message = MIMEMultipart()
-        message["Subject"] = assunto
-        message["From"] = SENDER_EMAIL or smtp_username
-        message["To"] = email
-        
-        # Primeiro, adicione uma versão em texto plano (importante para compatibilidade)
-        texto_plano = "Este email contém formatação HTML que seu cliente de email não suporta."
-        parte_texto = MIMEText(texto_plano, "plain")
-        message.attach(parte_texto)
-        
-        # Depois, adicione a versão HTML
-        parte_html = MIMEText(conteudo_html, "html")
-        message.attach(parte_html)
-        
-        # Tentar enviar com SMTP
-        try:
-            with smtplib.SMTP(smtp_server, smtp_port) as server:
-                if smtp_port in [587, 25]:
-                    server.starttls()
-                server.login(smtp_username, smtp_password)
-                server.send_message(message)
-                print(f"Email HTML enviado com sucesso para {email}")
-                return True
-        except Exception as smtp_error:
-            print(f"Erro ao enviar email com smtplib: {str(smtp_error)}")
-            # Fallback para aiosmtplib
-            try:
-                if smtp_port == 465:
-                    async with aiosmtplib.SMTP(hostname=smtp_server, port=smtp_port, use_tls=True) as server:
-                        await server.login(smtp_username, smtp_password)
-                        await server.send_message(message)
-                else:
-                    async with aiosmtplib.SMTP(hostname=smtp_server, port=smtp_port) as server:
-                        await server.starttls()
-                        await server.login(smtp_username, smtp_password)
-                        await server.send_message(message)
-                print(f"Email HTML enviado com sucesso para {email} (via aiosmtplib)")
-                return True
-            except Exception as async_error:
-                print(f"Erro ao enviar email com aiosmtplib: {str(async_error)}")
-                raise
-    except Exception as e:
-        print(f"Erro ao enviar email HTML para {email}: {str(e)}")
-        return False
-
-@staticmethod
-async def enviar_email_html(email, assunto, conteudo_html):
-    """
-    Envia um email com conteúdo HTML
-    
-    Args:
-        email: Email do destinatário
-        assunto: Assunto do email
-        conteudo_html: Conteúdo HTML do email
-    
-    Returns:
-        bool: True se o email foi enviado com sucesso
-    """
-    try:
-        # Usar as configurações do .env
-        smtp_server = SMTP_SERVER
-        smtp_port = SMTP_PORT
-        smtp_username = SMTP_USERNAME
-        smtp_password = SMTP_PASSWORD
-        
-        print(f"Enviando email HTML para {email} usando servidor {smtp_server}:{smtp_port}")
-        
-        # Criar a mensagem de email
-        message = MIMEMultipart("alternative")
-        message["Subject"] = assunto
-        message["From"] = SENDER_EMAIL or smtp_username
-        message["To"] = email
-        
-        # Anexar a parte HTML à mensagem
-        parte_html = MIMEText(conteudo_html, "html")
-        message.attach(parte_html)
-        
-        # Tentar enviar o email primeiro com smtplib
-        try:
-            with smtplib.SMTP(smtp_server, smtp_port) as server:
-                # Inicie TLS apenas se a porta for 587 ou 25
-                if smtp_port in [587, 25]:
-                    server.starttls()
-                server.login(smtp_username, smtp_password)
-                server.send_message(message)
-                print(f"Email HTML enviado com sucesso para {email}")
-                return True
-        except Exception as smtp_error:
-            print(f"Erro ao enviar email com smtplib: {str(smtp_error)}")
-            # Tentar com aiosmtplib como fallback
-            try:
-                if smtp_port == 465:
-                    async with aiosmtplib.SMTP(hostname=smtp_server, port=smtp_port, use_tls=True) as server:
-                        await server.login(smtp_username, smtp_password)
-                        await server.send_message(message)
-                else:
-                    async with aiosmtplib.SMTP(hostname=smtp_server, port=smtp_port) as server:
-                        await server.starttls()
-                        await server.login(smtp_username, smtp_password)
-                        await server.send_message(message)
-                print(f"Email HTML enviado com sucesso para {email} (via aiosmtplib)")
-                return True
-            except Exception as async_error:
-                print(f"Erro ao enviar email com aiosmtplib: {str(async_error)}")
-                raise
-                
-    except Exception as e:
-        print(f"Erro ao enviar email HTML para {email}: {str(e)}")
-        return False
-
-# Cria uma instância do serviço de email
-email_service = EmailService()
+    # Executa o teste
+    asyncio.run(teste_envio())

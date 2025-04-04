@@ -1,45 +1,38 @@
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from fastapi.responses import HTMLResponse, RedirectResponse
 from contextlib import asynccontextmanager
 from starlette.middleware.base import BaseHTTPMiddleware
-from routes.eventos import eventos_router
-from config.database import conectar_db, fechar_conexao
-import os
+from starlette.middleware.sessions import SessionMiddleware
 from pathlib import Path
-from services.email_service import email_service
-from routes.auth import router as auth_router, verificar_autenticacao
-from fastapi.security import OAuth2PasswordBearer
-from routes.relatorios import router as relatorios_router
+import os
 from datetime import datetime
-from jose import jwt, JWTError
-from config.secrets import SECRET_KEY, ALGORITHM
-from fastapi import HTTPException, Request
-from config.database import get_database
-from routes.auth import get_current_user
-from fastapi import APIRouter, File, UploadFile, HTTPException, Depends, Request, Body, Form
 
-# Middleware de autenticação
-class AuthMiddleware(BaseHTTPMiddleware):
-    async def dispatch(self, request: Request, call_next):
-        return await verificar_autenticacao(request, call_next)
+# Importações das rotas
+from routes.eventos import eventos_router
+from routes.auth import router as auth_router, verificar_autenticacao, get_current_user
+from routes.relatorios import router as relatorios_router
+
+# Importações de configuração
+from config.database import conectar_db, fechar_conexao, get_database
+from config.secrets import SECRET_KEY, ALGORITHM
+from jose import jwt
+
+# Obtém o diretório base do projeto
+BASE_DIR = Path(__file__).resolve().parent
 
 # Lifespan context manager
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Código executado na inicialização
     print("Iniciando aplicação...")
     await conectar_db()
-    
-    yield  # Aqui a aplicação está rodando
-    
-    # Código executado no desligamento
+    yield
     print("Encerrando aplicação...")
     await fechar_conexao()
 
-# Inicializa o FastAPI
+# Criar a aplicação FastAPI
 app = FastAPI(
     title="Sistema RSVP",
     description="Sistema para gerenciamento de eventos e confirmações de presença",
@@ -49,42 +42,93 @@ app = FastAPI(
     lifespan=lifespan
 )
 
-# Obtém o diretório base do projeto
-BASE_DIR = Path(__file__).resolve().parent
-
 # Configuração dos templates
 templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
 
-# Configuração do CORS
+# Middleware de autenticação
+@app.middleware("http")
+async def authenticate(request: Request, call_next):
+    # Debug log
+    print(f"Rota acessada: {request.url.path}")
+    
+    # Verifica se é uma rota pública
+    public_paths = [
+        "/api/auth/login",
+        "/api/auth/token",
+        "/api/eventos/confirmar",
+        "/api/eventos/recusar",
+        "/api/eventos/confirmar-presenca",
+        "/api/eventos/salvar-observacoes",  # Adicionada rota de observações
+        "/api/eventos/motivo-recusa",       # Adicionada rota de recusa
+        "/static",
+        "/uploads",
+        "/login"
+    ]
+    
+    # Verifica se é uma rota de convidado (observações, motivo de recusa, etc)
+    guest_paths = [
+        "salvar-observacoes",
+        "motivo-recusa",
+        "enviar-email",
+        "confirmar-presenca",
+        "confirmar",
+        "recusar"
+    ]
+    
+    # Se for uma solicitação de arquivo estático ou upload
+    if request.url.path.startswith(("/static/", "/uploads/")):
+        return await call_next(request)
+    
+    # Verifica se é uma rota de convidado
+    is_guest_action = any(path in request.url.path for path in guest_paths)
+    
+    # Verifica se é um acesso a detalhes de evento
+    is_event_detail = (
+        "/eventos/" in request.url.path and 
+        request.method == "GET"
+    )
+    
+    # Verifica se é uma rota pública
+    is_public_path = any(request.url.path.startswith(path) for path in public_paths)
+
+    print(f"Is public path: {is_public_path}")
+    print(f"Is guest action: {is_guest_action}")
+    print(f"Is event detail: {is_event_detail}")
+    
+    # Se for rota pública, ação de convidado ou detalhe de evento, permite o acesso
+    if is_public_path or is_guest_action or is_event_detail:
+        print("Permitindo acesso à rota pública")
+        return await call_next(request)
+    
+    # Para outras rotas, verifica autenticação
+    token = request.cookies.get("access_token")
+    if not token:
+        print("Token não encontrado")
+        if request.url.path.startswith("/api/"):
+            raise HTTPException(status_code=401, detail="Não autenticado")
+        return RedirectResponse(url="/login")
+    
+    response = await call_next(request)
+    return response
+
+# Configura CORS
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
-    allow_headers=["*"]
+    allow_headers=["*"],
 )
 
-# Adiciona o middleware de autenticação
-app.add_middleware(AuthMiddleware)
-
-# Inclui as rotas de eventos
-app.include_router(
-    eventos_router,
-    prefix="/api/eventos",
-    tags=["eventos"]
+# Adiciona middleware de sessão
+app.add_middleware(
+    SessionMiddleware, 
+    secret_key=SECRET_KEY,
+    session_cookie="session",
+    max_age=1800  # 30 minutos
 )
 
-# Adiciona o router de autenticação
-app.include_router(auth_router, prefix="/api/auth")
-
-# Adiciona o router de relatórios
-app.include_router(
-    relatorios_router,
-    prefix="/api/relatorios",
-    tags=["relatorios"]
-)
-
-# Configura pasta de arquivos estáticos
+# Configuração de diretórios estáticos
 static_dir = BASE_DIR / "static"
 uploads_dir = BASE_DIR / "uploads"
 
@@ -96,33 +140,32 @@ uploads_dir.mkdir(exist_ok=True)
 app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
 app.mount("/uploads", StaticFiles(directory=str(uploads_dir)), name="uploads")
 
-# Rota raiz redireciona para login ou tela adequada
+# Inclui os routers
+app.include_router(eventos_router, prefix="/api/eventos", tags=["eventos"])
+app.include_router(auth_router, prefix="/api/auth", tags=["auth"])
+app.include_router(relatorios_router, prefix="/api/relatorios", tags=["relatorios"])
+
+# Rota raiz
 @app.get("/", response_class=HTMLResponse)
 async def root(request: Request):
     """Rota principal - redireciona para login se não autenticado"""
-    # Verificar se já está autenticado
     token = request.cookies.get("access_token")
     if token:
         try:
-            # Decode e valida o token
             payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
             username = payload.get("sub")
             role = payload.get("role", "")
             
-            # Redirecionar com base no papel
             if role == "admin":
                 return RedirectResponse(url="/eventos")
             elif role == "reporter":
                 return RedirectResponse(url="/relatorios")
-            else:
-                return RedirectResponse(url="/eventos")
+            return RedirectResponse(url="/eventos")
         except:
-            # Se o token for inválido, redireciona para login
             pass
-    
-    # Se não autenticado ou token inválido, redireciona para login
     return RedirectResponse(url="/login")
 
+# Rotas de autenticação
 @app.get("/login", response_class=HTMLResponse)
 async def login_page(request: Request):
     """Página de login"""
@@ -131,16 +174,19 @@ async def login_page(request: Request):
         {"request": request, "year": datetime.now().year}
     )
 
-# IMPORTANTE: Adiciona a rota POST para login
 @app.post("/login", response_class=HTMLResponse)
 async def login_post(request: Request):
-    """Rota POST para o login - redireciona para a API"""
+    """Rota POST para o login"""
     return RedirectResponse(url="/api/auth/login", status_code=307)
 
-# Rotas para as páginas
+# Rotas de eventos
 @app.get("/eventos", response_class=HTMLResponse)
 async def lista_eventos(request: Request):
     """Página de listagem de eventos"""
+    user = await get_current_user(request)
+    if user['role'] != 'admin':
+        return RedirectResponse(url="/relatorios", status_code=303)
+    
     return templates.TemplateResponse(
         "eventos/lista.html",
         {"request": request, "active_page": "eventos", "year": datetime.now().year}
@@ -149,6 +195,10 @@ async def lista_eventos(request: Request):
 @app.get("/eventos/novo", response_class=HTMLResponse)
 async def novo_evento(request: Request):
     """Página de criação de novo evento"""
+    user = await get_current_user(request)
+    if user['role'] != 'admin':
+        return RedirectResponse(url="/relatorios", status_code=303)
+    
     return templates.TemplateResponse(
         "eventos/criar.html",
         {"request": request, "active_page": "novo", "year": datetime.now().year}
@@ -157,46 +207,48 @@ async def novo_evento(request: Request):
 @app.get("/eventos/{evento_id}", response_class=HTMLResponse)
 async def detalhes_evento(request: Request, evento_id: str):
     """Página de detalhes do evento"""
-    return templates.TemplateResponse(
-        "eventos/detalhes.html",
-        {
-            "request": request,
-            "evento_id": evento_id,
-            "active_page": "eventos",
-            "year": datetime.now().year
-        }
-    )
+    print(f"Acessando detalhes do evento: {evento_id}")
+    
+    try:
+        # Tentar obter o usuário, mas não bloquear se não estiver autenticado
+        user = None
+        try:
+            user = await get_current_user(request)
+        except:
+            print("Usuário não autenticado - acessando como convidado")
+            pass
+        
+        # Renderiza a página sempre, mesmo sem autenticação
+        return templates.TemplateResponse(
+            "eventos/detalhes.html",
+            {
+                "request": request,
+                "evento_id": evento_id,
+                "active_page": "eventos",
+                "year": datetime.now().year,
+                "is_admin": user and user.get('role') == 'admin'
+            }
+        )
+    except Exception as e:
+        print(f"Erro ao acessar detalhes do evento: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
 
-# Adicionar uma rota específica para relatórios
-@app.get("/relatorios")
+# Rota de relatórios
+@app.get("/relatorios", response_class=HTMLResponse)
 async def pagina_relatorios(request: Request):
     """Página de relatórios"""
     try:
-        print("Iniciando carregamento de eventos para relatórios")
         db = get_database()
-        print("Banco de dados obtido com sucesso")
-        
         eventos = []
-        print("Buscando eventos no banco de dados")
         
-        # Primeiro, conte o número de eventos
-        total_eventos = await db.eventos.count_documents({})
-        print(f"Total de eventos encontrados: {total_eventos}")
-        
-        # Busque os eventos
         async for evento in db.eventos.find():
-            print(f"Evento encontrado: {evento}")
-            
             if '_id' in evento:
                 evento['_id'] = str(evento['_id'])
-            
             eventos.append({
                 "id": evento['_id'],
                 "nome": evento.get('nome', 'Evento sem nome'),
                 "data": evento.get('data', 'Sem data')
             })
-        
-        print(f"Número de eventos processados: {len(eventos)}")
         
         return templates.TemplateResponse(
             "relatorios/index.html",
@@ -208,89 +260,23 @@ async def pagina_relatorios(request: Request):
             }
         )
     except Exception as e:
-        print(f"Erro DETALHADO ao carregar eventos: {e}")
-        import traceback
-        traceback.print_exc()
+        print(f"Erro ao carregar eventos: {e}")
         raise HTTPException(status_code=500, detail=str(e))
-
-@app.get("/debug/database")
-async def debug_database():
-    """Endpoint para depuração da conexão com o banco de dados"""
-    try:
-        db = get_database()
-        
-        # Tente algumas operações básicas
-        total_eventos = await db.eventos.count_documents({})
-        eventos = await db.eventos.find().to_list(length=None)
-        
-        return {
-            "status": "success", 
-            "total_eventos": total_eventos,
-            "eventos": [str(evento) for evento in eventos]
-        }
-    except Exception as e:
-        print(f"Erro de depuração do banco de dados: {e}")
-        import traceback
-        traceback.print_exc()
-        return {"status": "error", "message": str(e)}
-
-@app.get("/eventos")
-async def lista_eventos(request: Request):
-    """Página de listagem de eventos"""
-    user = await get_current_user(request)
-    
-    if user['role'] != 'admin':
-        return RedirectResponse(url="/relatorios", status_code=303)
-    
-    return templates.TemplateResponse(
-        "eventos/lista.html",
-        {"request": request, "active_page": "eventos", "year": datetime.now().year}
-    )
-
-@app.get("/eventos/novo")
-async def novo_evento(request: Request):
-    """Página de criação de novo evento"""
-    user = await get_current_user(request)
-    
-    if user['role'] != 'admin':
-        return RedirectResponse(url="/relatorios", status_code=303)
-    
-    return templates.TemplateResponse(
-        "eventos/criar.html",
-        {"request": request, "active_page": "novo", "year": datetime.now().year}
-    )
-
-@app.get("/eventos/{evento_id}")
-async def detalhes_evento(request: Request, evento_id: str):
-    """Página de detalhes do evento"""
-    user = await get_current_user(request)
-    
-    if user['role'] != 'admin':
-        return RedirectResponse(url="/relatorios", status_code=303)
-    
-    return templates.TemplateResponse(
-        "eventos/detalhes.html",
-        {
-            "request": request,
-            "evento_id": evento_id,
-            "active_page": "eventos",
-            "year": datetime.now().year
-        }
-    )
 
 # Rota de logout
 @app.get("/sair")
 async def logout(request: Request):
-    """Rota para fazer logout - limpa o cookie do token e redireciona para login"""
+    """Rota para fazer logout"""
     response = RedirectResponse(url="/login", status_code=303)
     response.delete_cookie(key="access_token", path="/")
-    # Também podemos adicionar cabeçalhos para forçar não-cache
-    response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
-    response.headers["Pragma"] = "no-cache"
-    response.headers["Expires"] = "0"
+    response.headers.update({
+        "Cache-Control": "no-cache, no-store, must-revalidate",
+        "Pragma": "no-cache",
+        "Expires": "0"
+    })
     return response
 
-# Rota de verificação de saúde da API
+# Rota de health check
 @app.get("/health")
 async def health_check():
     """Endpoint para verificar se a API está funcionando"""
@@ -302,15 +288,11 @@ async def health_check():
 # Configuração para execução local
 if __name__ == "__main__":
     import uvicorn
-    
-    # Obtém a porta do ambiente ou usa 8000 como padrão
     port = int(os.getenv("PORT", 8000))
-    
-    # Configuração do uvicorn
     uvicorn.run(
         "app:app",
-        host="0.0.0.0",  # Permite acesso externo
+        host="0.0.0.0",
         port=port,
-        reload=True,  # Recarrega automaticamente ao alterar código
-        workers=1  # Número de processos workers
+        reload=True,
+        workers=1
     )

@@ -1,0 +1,52 @@
+2025-04-03 11:30:47,503 - asyncio - DEBUG - Using proactor: IocpProactor
+2025-04-03 11:30:47,504 - __main__ - INFO - Testando conexão com smtp.office365.com:587
+2025-04-03 11:30:47,717 - __main__ - ERROR - Erro no teste de conexão: name 'SMTP_PASSWORD' is not defined
+2025-04-03 23:50:13,955 - asyncio - DEBUG - Using proactor: IocpProactor
+2025-04-03 23:50:13,959 - __main__ - INFO - Testando conexão com smtp.office365.com:587
+2025-04-03 23:50:14,152 - __main__ - ERROR - Erro no teste de conexão: name 'SMTP_PASSWORD' is not defined
+2025-04-04 01:35:44,998 - asyncio - DEBUG - Using proactor: IocpProactor
+2025-04-04 01:35:45,003 - __main__ - INFO - Testando conexão com smtp.office365.com:587
+2025-04-04 01:35:45,004 - __main__ - INFO - Obtendo novo token OAuth
+2025-04-04 01:35:45,594 - urllib3.util.retry - DEBUG - Converted retries value: 1 -> Retry(total=1, connect=None, read=None, redirect=None, status=None)
+2025-04-04 01:35:45,594 - msal.authority - DEBUG - Initializing with Entra authority: https://login.microsoftonline.com/290139d0-7a23-4621-bf4d-15e5c8ed1b50
+2025-04-04 01:35:45,613 - urllib3.connectionpool - DEBUG - Starting new HTTPS connection (1): login.microsoftonline.com:443
+2025-04-04 01:35:45,858 - urllib3.connectionpool - DEBUG - https://login.microsoftonline.com:443 "GET /290139d0-7a23-4621-bf4d-15e5c8ed1b50/v2.0/.well-known/openid-configuration HTTP/1.1" 200 1753
+2025-04-04 01:35:45,861 - msal.authority - DEBUG - openid_config("https://login.microsoftonline.com/290139d0-7a23-4621-bf4d-15e5c8ed1b50/v2.0/.well-known/openid-configuration") = {'token_endpoint': 'https://login.microsoftonline.com/290139d0-7a23-4621-bf4d-15e5c8ed1b50/oauth2/v2.0/token', 'token_endpoint_auth_methods_supported': ['client_secret_post', 'private_key_jwt', 'client_secret_basic'], 'jwks_uri': 'https://login.microsoftonline.com/290139d0-7a23-4621-bf4d-15e5c8ed1b50/discovery/v2.0/keys', 'response_modes_supported': ['query', 'fragment', 'form_post'], 'subject_types_supported': ['pairwise'], 'id_token_signing_alg_values_supported': ['RS256'], 'response_types_supported': ['code', 'id_token', 'code id_token', 'id_token token'], 'scopes_supported': ['openid', 'profile', 'email', 'offline_access'], 'issuer': 'https://login.microsoftonline.com/290139d0-7a23-4621-bf4d-15e5c8ed1b50/v2.0', 'request_uri_parameter_supported': False, 'userinfo_endpoint': 'https://graph.microsoft.com/oidc/userinfo', 'authorization_endpoint': 'https://login.microsoftonline.com/290139d0-7a23-4621-bf4d-15e5c8ed1b50/oauth2/v2.0/authorize', 'device_authorization_endpoint': 'https://login.microsoftonline.com/290139d0-7a23-4621-bf4d-15e5c8ed1b50/oauth2/v2.0/devicecode', 'http_logout_supported': True, 'frontchannel_logout_supported': True, 'end_session_endpoint': 'https://login.microsoftonline.com/290139d0-7a23-4621-bf4d-15e5c8ed1b50/oauth2/v2.0/logout', 'claims_supported': ['sub', 'iss', 'cloud_instance_name', 'cloud_instance_host_name', 'cloud_graph_host_name', 'msgraph_host', 'aud', 'exp', 'iat', 'auth_time', 'acr', 'nonce', 'preferred_username', 'name', 'tid', 'ver', 'at_hash', 'c_hash', 'email'], 'kerberos_endpoint': 'https://login.microsoftonline.com/290139d0-7a23-4621-bf4d-15e5c8ed1b50/kerberos', 'tenant_region_scope': 'SA', 'cloud_instance_name': 'microsoftonline.com', 'cloud_graph_host_name': 'graph.windows.net', 'msgraph_host': 'graph.microsoft.com', 'rbac_url': 'https://pas.windows.net'}
+2025-04-04 01:35:45,861 - msal.application - DEBUG - Broker enabled? None
+2025-04-04 01:35:45,862 - msal.application - DEBUG - Region to be used: None
+2025-04-04 01:35:45,863 - msal.telemetry - DEBUG - Generate or reuse correlation_id: 79989abc-f68d-43b4-bdb8-9e2d2feea4f7
+2025-04-04 01:35:46,046 - urllib3.connectionpool - DEBUG - https://login.microsoftonline.com:443 "POST /290139d0-7a23-4621-bf4d-15e5c8ed1b50/oauth2/v2.0/token HTTP/1.1" 200 1733
+2025-04-04 01:35:46,048 - msal.token_cache - DEBUG - event={
+    "client_id": "acd18e7b-f254-4a51-b4c8-eae72d0ae708",
+    "data": {
+        "claims": null,
+        "scope": [
+            "https://outlook.office365.com/.default"
+        ]
+    },
+    "environment": "login.microsoftonline.com",
+    "grant_type": "client_credentials",
+    "params": null,
+    "response": {
+        "access_token": "********",
+        "expires_in": 3599,
+        "ext_expires_in": 3599,
+        "token_type": "Bearer"
+    },
+    "scope": [
+        "https://outlook.office365.com/.default"
+    ],
+    "token_endpoint": "https://login.microsoftonline.com/290139d0-7a23-4621-bf4d-15e5c8ed1b50/oauth2/v2.0/token"
+}
+2025-04-04 01:35:46,048 - __main__ - INFO - Token OAuth obtido com sucesso. Expira em 3599 segundos
+2025-04-04 01:35:52,370 - __main__ - INFO - Conexão de teste bem-sucedida!
+2025-04-04 01:35:52,383 - __main__ - INFO - Preparando email para guisj1997@gmail.com com assunto: Teste de Email Code Events
+2025-04-04 01:35:52,385 - __main__ - INFO - Usando token OAuth existente
+2025-04-04 01:35:52,385 - __main__ - INFO - Conectando ao servidor smtp.office365.com:587
+2025-04-04 01:35:52,410 - __main__ - INFO - Iniciando TLS
+2025-04-04 01:35:52,462 - __main__ - INFO - Realizando autenticação OAuth 2.0 com usuário: eventos@cod.events
+2025-04-04 01:35:57,675 - __main__ - INFO - Enviando mensagem
+2025-04-04 01:36:02,696 - __main__ - ERROR - Erro de envio SMTP: (530, b'5.7.57 Client not authenticated to send mail. Error: 535 5.7.3 Authentication unsuccessful [CP6P284CA0061.BRAP284.PROD.OUTLOOK.COM 2025-04-04T04:36:04.421Z 08DD7318DDDC149F]', 'eventos@cod.events')
+2025-04-04 01:41:07,346 - asyncio - DEBUG - Using proactor: IocpProactor
+2025-04-04 01:41:07,348 - __main__ - INFO - Testando conexão com smtp.office365.com:587
+2025-04-04 01:41:14,516 - __main__ - ERROR - Erro no teste de conexão: (535, b"5.7.139 Authentication unsuccessful, user is locked by your organization's security defaults policy. Contact your administrator. [CP5P284CA0056.BRAP284.PROD.OUTLOOK.COM 2025-04-04T04:41:16.243Z 08DD71D18031587C]")
